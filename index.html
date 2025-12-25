@@ -1,13 +1,102 @@
 <!DOCTYPE html>
-<input id="u" placeholder="https://example.com">
-<button onclick="go()">Go</button>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mini Browser</title>
+<!-- Material Icons -->
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+<style>
+  body { margin: 0; font-family: Arial, sans-serif; }
+  .browser-bar {
+    display: flex;
+    align-items: center;
+    padding: 5px 10px;
+    background: #f1f1f1;
+    gap: 5px;
+  }
+  .browser-bar button {
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-size: 24px;
+    color: #555;
+  }
+  .browser-bar button:hover {
+    color: #000;
+  }
+  .browser-bar input {
+    flex: 1;
+    padding: 5px 10px;
+    font-size: 16px;
+    border-radius: 5px;
+    border: 1px solid #ccc;
+  }
+  iframe {
+    width: 100%;
+    height: 90vh;
+    border: none;
+  }
+</style>
+</head>
+<body>
 
-<iframe id="v" style="width:100%;height:90vh;"></iframe>
+<div class="browser-bar">
+  <button id="back"><span class="material-icons">arrow_back</span></button>
+  <button id="forward"><span class="material-icons">arrow_forward</span></button>
+  <button id="reload"><span class="material-icons">refresh</span></button>
+  <input id="url" placeholder="https://example.com">
+  <button id="go"><span class="material-icons">play_arrow</span></button>
+</div>
+
+<iframe id="browserFrame"></iframe>
 
 <script>
-function go() {
-  const url = document.getElementById("u").value;
-  document.getElementById("v").src =
-    "https://proxy.ikunbeautiful.workers.dev/?url=" + encodeURIComponent(url);
+const iframe = document.getElementById("browserFrame");
+const urlInput = document.getElementById("url");
+
+let historyStack = [];
+let currentIndex = -1;
+
+function navigate(url) {
+  if (!url.startsWith("http")) url = "https://" + url;
+  iframe.src = "https://proxy.ikunbeautiful.workers.dev/?url=" + encodeURIComponent(url);
+  // Update history
+  if (currentIndex === -1 || historyStack[currentIndex] !== url) {
+    historyStack = historyStack.slice(0, currentIndex + 1);
+    historyStack.push(url);
+    currentIndex++;
+  }
+  urlInput.value = url;
 }
+
+document.getElementById("go").onclick = () => navigate(urlInput.value);
+
+document.getElementById("reload").onclick = () => {
+  if (currentIndex >= 0) iframe.src = "https://proxy.ikunbeautiful.workers.dev/?url=" + encodeURIComponent(historyStack[currentIndex]);
+};
+
+document.getElementById("back").onclick = () => {
+  if (currentIndex > 0) {
+    currentIndex--;
+    iframe.src = "https://proxy.ikunbeautiful.workers.dev/?url=" + encodeURIComponent(historyStack[currentIndex]);
+    urlInput.value = historyStack[currentIndex];
+  }
+};
+
+document.getElementById("forward").onclick = () => {
+  if (currentIndex < historyStack.length - 1) {
+    currentIndex++;
+    iframe.src = "https://proxy.ikunbeautiful.workers.dev/?url=" + encodeURIComponent(historyStack[currentIndex]);
+    urlInput.value = historyStack[currentIndex];
+  }
+};
+
+// Allow Enter key to navigate
+urlInput.addEventListener("keydown", e => {
+  if (e.key === "Enter") navigate(urlInput.value);
+});
 </script>
+
+</body>
+</html>
