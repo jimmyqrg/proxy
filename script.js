@@ -39,12 +39,8 @@ function newTab(url="https://example.com"){
   iframe.dataset.id=id;
 
   iframe.onload = () => {
-    try {
-      const t = iframe.contentDocument.title;
-      if(t) activeTab.title = t;
-    } catch(e){
-      activeTab.title = new URL(activeTab.url).hostname;
-    }
+    try { const t = iframe.contentDocument.title; if(t) activeTab.title = t; } 
+    catch(e){ activeTab.title = new URL(activeTab.url).hostname; }
     renderTabs();
   };
 
@@ -64,17 +60,37 @@ function switchTab(id){
 function closeTab(id){
   const idx=tabs.findIndex(t=>t.id===id);
   if(idx===-1) return;
-  const t=tabs[idx];
-  t.iframe.remove();
+  tabs[idx].iframe.remove();
   tabs.splice(idx,1);
   if(activeTab.id===id) switchTab(tabs[Math.max(0,idx-1)]?.id);
 }
 
 // ---------- History & Bookmarks ----------
 function saveHistory(url){ history.push(url); localStorage.setItem("browserHistory",JSON.stringify(history)); renderHistory(); }
-function renderHistory(){ const h=document.getElementById("history"); h.innerHTML=""; history.slice().reverse().forEach(u=>{const d=document.createElement("div"); d.className="item"; d.innerHTML=`<img src="${favicon(u)}">${u}`; d.onclick=()=>navigate(u); h.appendChild(d);}); }
-function renderBookmarks(){ const b=document.getElementById("bookmarks"); b.innerHTML=""; bookmarks.forEach(u=>{ const d=document.createElement("div"); d.className="item"; d.innerHTML=`<img src="${favicon(u)}">${u}`; d.onclick=()=>navigate(u); b.appendChild(d); }); }
+function renderHistory(){ 
+  const h=document.getElementById("history"); 
+  h.innerHTML=""; 
+  history.slice().reverse().forEach(u=>{
+    const d=document.createElement("div"); 
+    d.className="item"; 
+    d.innerHTML=`<img src="${favicon(u)}">${u}`; 
+    d.onclick=()=>navigate(u); 
+    h.appendChild(d);
+  }); 
+}
+function renderBookmarks(){ 
+  const b=document.getElementById("bookmarks"); 
+  b.innerHTML=""; 
+  bookmarks.forEach(u=>{ 
+    const d=document.createElement("div"); 
+    d.className="item"; 
+    d.innerHTML=`<img src="${favicon(u)}">${u}`; 
+    d.onclick=()=>navigate(u); 
+    b.appendChild(d); 
+  }); 
+}
 function addBookmark(url){ if(!bookmarks.includes(url)){ bookmarks.push(url); localStorage.setItem("browserBookmarks",JSON.stringify(bookmarks)); renderBookmarks(); } }
+document.getElementById("clearHistory").onclick = () => { history = []; localStorage.setItem("browserHistory","[]"); renderHistory(); };
 
 // ---------- Navigation ----------
 function navigate(url){ 
