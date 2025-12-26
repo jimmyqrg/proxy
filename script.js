@@ -56,7 +56,7 @@ function handleDragOver(e){e.preventDefault();e.dataTransfer.dropEffect='move';}
 function handleDrop(e){e.stopPropagation();if(dragSrcEl!==e.currentTarget){const fromIndex=tabs.findIndex(t=>t.id==dragSrcEl.dataset.id);const toIndex=tabs.findIndex(t=>t.id==e.currentTarget.dataset.id);tabs.splice(toIndex,0,tabs.splice(fromIndex,1)[0]);renderTabs();attachDragEvents();}}
 function attachDragEvents(){document.querySelectorAll('.tab').forEach(tab=>{tab.draggable=true;tab.dataset.id=tabs.find(t=>t.title===tab.querySelector('span').innerText).id;tab.addEventListener('dragstart',handleDragStart);tab.addEventListener('dragover',handleDragOver);tab.addEventListener('drop',handleDrop);});}
 
-function newTab(url="default/"){
+function newTab(url="https://proxy.jimmyqrg.com/default/"){
   const id=Date.now();
   const iframe=document.createElement("iframe");
   iframe.src=proxy+encodeURIComponent(url);
