@@ -13,7 +13,9 @@ body{margin:0;font-family:Arial,sans-serif;background:var(--bg);color:var(--text
 .add-tab{border:none;background:none;font-size:24px;cursor:pointer;color:var(--text);}
 .main{display:flex;height:calc(100vh - 100px);}
 .sidebar{width:250px;background:var(--panel);border-right:1px solid var(--border);overflow-y:auto;padding:5px;box-sizing:border-box;transition:0.3s;}
-.sidebar.collapsed{width:0;padding:0;overflow:hidden;}
+.sidebar.collapsed{width:40px;padding:5px;}
+.sidebar.collapsed .list{display:none;}
+.sidebar .list{transition:0.3s;}
 .sidebar-toggle{display:flex;justify-content:flex-end;margin-bottom:5px;}
 .list{margin-bottom:10px;}
 .list-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;}
