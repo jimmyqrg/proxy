@@ -1,4 +1,4 @@
-:root{--bg:#f5f5f5;--bar:#fff;--text:#111;--panel:#fafafa;--border:#ccc;}
+:root{--bg:#c5c5c5;--bar:#fff;--text:#111;--panel:#fafafa;--border:#ccc;}
 body.dark{--bg:#121212;--bar:#1e1e1e;--text:#e0e0e0;--panel:#181818;--border:#333;}
 body{margin:0;font-family:Arial,sans-serif;background:var(--bg);color:var(--text);transition:0.25s;}
 .browser-bar{display:flex;align-items:center;gap:5px;padding:5px 8px;background:var(--bar);border-bottom:1px solid var(--border);}
