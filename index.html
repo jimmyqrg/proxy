@@ -2,16 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Hackwize</title>
-<link rel="icon" href="https://student.jimmyqrg.com/jq.ico"
+<title>Mini Browser with Tabs</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<!-- Google Material Icons -->
 <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-
 <link rel="stylesheet" href="style.css">
 </head>
-
 <body>
 
 <div class="browser-bar">
@@ -22,20 +18,25 @@
     <button id="home"><span class="material-icons">home</span></button>
   </div>
 
-  <input id="url" placeholder="https://example.com">
+  <input id="url" placeholder="URL">
 
   <div class="action-buttons">
     <button id="go"><span class="material-icons">play_arrow</span></button>
-    <button id="newtab"><span class="material-icons">add</span></button>
     <button id="bookmark"><span class="material-icons">star_border</span></button>
     <button id="theme"><span class="material-icons">dark_mode</span></button>
   </div>
 </div>
 
-<div class="tabs" id="tabs"></div>
+<div class="tabs-container">
+  <div class="tabs" id="tabs"></div>
+  <button id="newtab" class="add-tab"><span class="material-icons">add</span></button>
+</div>
 
 <div class="main">
-  <div class="sidebar">
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-toggle">
+      <button id="toggleSidebar" title="Hide/Show Sidebar"><span class="material-icons">chevron_left</span></button>
+    </div>
     <div class="list">
       <div class="list-header">
         <strong>History</strong>
@@ -54,6 +55,6 @@
   <div class="iframe-container" id="iframes"></div>
 </div>
 
-<script src="script.js"></script>
+<script src="browser.js"></script>
 </body>
 </html>
