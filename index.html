@@ -8,41 +8,51 @@
 <!-- Google Material Icons -->
 <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
 
-<!-- CSS -->
 <link rel="stylesheet" href="style.css">
 </head>
 
 <body>
 
 <div class="browser-bar">
-  <button id="back"><span class="material-icons">arrow_back</span></button>
-  <button id="forward"><span class="material-icons">arrow_forward</span></button>
-  <button id="reload"><span class="material-icons">refresh</span></button>
-  <button id="home"><span class="material-icons">home</span></button>
+  <div class="nav-buttons">
+    <button id="back"><span class="material-icons">arrow_back</span></button>
+    <button id="forward"><span class="material-icons">arrow_forward</span></button>
+    <button id="reload"><span class="material-icons">refresh</span></button>
+    <button id="home"><span class="material-icons">home</span></button>
+  </div>
 
   <input id="url" placeholder="https://example.com">
 
-  <button id="bookmark"><span class="material-icons">star_border</span></button>
-  <button id="theme"><span class="material-icons">dark_mode</span></button>
-  <button id="newtab"><span class="material-icons">add</span></button>
-  <button id="go"><span class="material-icons">play_arrow</span></button>
+  <div class="action-buttons">
+    <button id="go"><span class="material-icons">play_arrow</span></button>
+    <button id="newtab"><span class="material-icons">add</span></button>
+    <button id="bookmark"><span class="material-icons">star_border</span></button>
+    <button id="theme"><span class="material-icons">dark_mode</span></button>
+  </div>
 </div>
 
 <div class="tabs" id="tabs"></div>
-<div id="iframes"></div>
 
-<div class="panel">
-  <div class="list">
-    <strong>History</strong>
-    <div id="history"></div>
+<div class="main">
+  <div class="sidebar">
+    <div class="list">
+      <div class="list-header">
+        <strong>History</strong>
+        <button id="clearHistory" title="Clear History"><span class="material-icons">delete</span></button>
+      </div>
+      <div id="history"></div>
+    </div>
+    <div class="list">
+      <div class="list-header">
+        <strong>Bookmarks</strong>
+      </div>
+      <div id="bookmarks"></div>
+    </div>
   </div>
-  <div class="list">
-    <strong>Bookmarks</strong>
-    <div id="bookmarks"></div>
-  </div>
+
+  <div class="iframe-container" id="iframes"></div>
 </div>
 
-<!-- JS -->
 <script src="script.js"></script>
 </body>
 </html>
