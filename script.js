@@ -68,7 +68,7 @@ document.getElementById("newtab").onclick=newTab;
 document.getElementById("back").onclick=()=>activeTab?.iframe.contentWindow.history.back();
 document.getElementById("forward").onclick=()=>activeTab?.iframe.contentWindow.history.forward();
 document.getElementById("reload").onclick=()=>activeTab&&(activeTab.iframe.src=proxy+encodeURIComponent(activeTab.url));
-document.getElementById("home").onclick=()=>navigate("default/");
+document.getElementById("home").onclick=()=>navigate("https://proxy.jimmyqrg.com/default/");
 document.getElementById("bookmark").onclick=()=>activeTab&&addBookmark(activeTab.url);
 document.getElementById("url").addEventListener("keydown",e=>{if(e.key==="Enter") navigate(e.target.value);});
 
