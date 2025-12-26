@@ -38,7 +38,6 @@ function newTab(url="https://example.com"){
   iframe.style.display="none";
   iframe.dataset.id=id;
 
-  // Auto-update title
   iframe.onload = () => {
     try {
       const t = iframe.contentDocument.title;
