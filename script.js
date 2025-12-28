@@ -1,5 +1,5 @@
 // Configuration
-const API_BASE_URL = 'https://source.ikunbeautiful.workers.dev';
+const API_BASE_URL = 'https://proxy.ikunbeautiful.workers.dev';
 
 // State
 let currentData = null;
