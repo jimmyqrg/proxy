@@ -362,35 +362,6 @@ function newTab(url = "https://proxy.jimmyqrg.com/default/") {
   return tab;
 }
 
-function switchTab(id) {
-  tabs.forEach(t => {
-    if (t.iframe) {
-      t.iframe.style.display = "none";
-    }
-  });
-  
-  activeTab = tabs.find(t => t.id === id);
-  
-  if (activeTab && activeTab.iframe) {
-    activeTab.iframe.style.display = "block";
-    document.getElementById("url").value = activeTab.url;
-    renderTabs();
-    updateBookmarkButton();
-    updateNavButtonStates(); // Add this line
-    
-    // Try to get current URL from iframe (works for same-origin)
-    try {
-      const iframeUrl = activeTab.iframe.contentWindow.location.href;
-      if (iframeUrl && iframeUrl !== 'about:blank' && iframeUrl !== activeTab.url) {
-        activeTab.url = iframeUrl;
-        document.getElementById("url").value = iframeUrl;
-      }
-    } catch (e) {
-      // Cross-origin restriction, use stored URL
-    }
-  }
-}
-
 function closeTab(id) {
   const idx = tabs.findIndex(t => t.id === id);
   if (idx === -1) return;
@@ -737,10 +708,30 @@ function setupIframeNavigationListener(iframe) {
 // Update URL when tab is switched
 function switchTab(id) {
   tabs.forEach(t => {
-      if (t.iframe) {
-          t.iframe.style.display = "none";
-      }
+    if (t.iframe) {
+      t.iframe.style.display = "none";
+    }
   });
+  
+  activeTab = tabs.find(t => t.id === id);
+  
+  if (activeTab && activeTab.iframe) {
+    activeTab.iframe.style.display = "block";
+    document.getElementById("url").value = activeTab.url;
+    renderTabs();
+    updateBookmarkButton();
+    updateNavButtonStates();
+    
+    try {
+      const iframeUrl = activeTab.iframe.contentWindow.location.href;
+      if (iframeUrl && iframeUrl !== 'about:blank' && iframeUrl !== activeTab.url) {
+        activeTab.url = iframeUrl;
+        document.getElementById("url").value = iframeUrl;
+      }
+    } catch (e) {
+      // Cross-origin restriction, use stored URL
+    }
+  }
   
   activeTab = tabs.find(t => t.id === id);
   
