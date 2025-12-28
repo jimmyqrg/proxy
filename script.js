@@ -9,7 +9,7 @@ let isInitialDarkModeLoad = true;
 
 // Tab cloak state
 let isTabCloaked = false;
-const cloakIcon = "https://student.jimmyqrg.com/cloak-images/pausd.png";
+const cloakIcon = "https://spicy.jimmyqrg.com/cloak-images/pausd.png";
 const cloakTitle = "My Apps";
 const originalFaviconLight = "/favicon-light.png";
 const originalFaviconDark = "/favicon-dark.png";
@@ -71,7 +71,7 @@ function updateBrowserTitle() {
 }
 
 // ---------- Favicon Cache ----------
-const defaultFavicon = "https://student.jimmyqrg.com/cloak-images/default.png";
+const defaultFavicon = "https://spicy.jimmyqrg.com/cloak-images/default.png";
 const faviconCache = new Map();
 
 const favicon = async (url) => {
