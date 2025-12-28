@@ -4,6 +4,39 @@ let history = JSON.parse(localStorage.getItem("browserHistory") || "[]");
 let bookmarks = JSON.parse(localStorage.getItem("browserBookmarks") || "[]");
 let activeTab = null;
 
+// Track if we're initializing dark mode from device
+let isInitialDarkModeLoad = true;
+
+// ---------- Tab Management Functions (for iframe communication) ----------
+window.browserTabs = {
+    open: function(url) {
+        newTab(url);
+        return {
+            close: function() {
+                // Find and close the tab
+                const tab = tabs.find(t => t.url === url);
+                if (tab) closeTab(tab.id);
+            }
+        };
+    },
+    
+    close: function() {
+        if (tabs.length > 1) {
+            closeTab(activeTab.id);
+        } else {
+            alert("Cannot close the last tab");
+        }
+    },
+    
+    getActiveTab: function() {
+        return activeTab;
+    },
+    
+    getAllTabs: function() {
+        return tabs;
+    }
+};
+
 // ---------- Favicon Cache ----------
 const defaultFavicon = "https://student.jimmyqrg.com/cloak-images/default.png";
 const faviconCache = new Map();
@@ -54,13 +87,49 @@ const favicon = async (url) => {
 
 // ---------- Dark Mode ----------
 const themeBtn = document.getElementById("theme");
-const setTheme = dark => {
+
+// Check device preference
+function getSystemTheme() {
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+}
+
+// Set theme with device preference consideration
+const setTheme = (dark) => {
+    // If this is initial load and no theme is saved, use system preference
+    if (isInitialDarkModeLoad && localStorage.getItem("darkMode") === null) {
+        dark = getSystemTheme();
+    }
+    
     document.body.classList.toggle("dark", dark);
     themeBtn.innerHTML = `<span class="material-icons">${dark ? "light_mode" : "dark_mode"}</span>`;
     localStorage.setItem("darkMode", dark ? "1" : "0");
+    isInitialDarkModeLoad = false;
 };
-setTheme(localStorage.getItem("darkMode") === "1");
-themeBtn.onclick = () => setTheme(!document.body.classList.contains("dark"));
+
+// Initialize theme
+const savedTheme = localStorage.getItem("darkMode");
+if (savedTheme !== null) {
+    setTheme(savedTheme === "1");
+} else {
+    // Use system preference
+    setTheme(getSystemTheme());
+}
+
+// Toggle theme on button click
+themeBtn.onclick = () => {
+    setTheme(!document.body.classList.contains("dark"));
+};
+
+// Listen for system theme changes
+if (window.matchMedia) {
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    mediaQuery.addEventListener('change', (e) => {
+        // Only auto-change if user hasn't manually set a preference
+        if (localStorage.getItem("darkMode") === null) {
+            setTheme(e.matches);
+        }
+    });
+}
 
 // ---------- Tab Preview ----------
 const preview = document.getElementById("tabPreview");
@@ -186,90 +255,194 @@ function attachDragEvents() {
 
 // ---------- Tab Management ----------
 function newTab(url = "https://proxy.jimmyqrg.com/default/") {
-    const id = Date.now();
-    const iframe = document.createElement("iframe");
-    
-    // Set up iframe
-    iframe.src = proxy + encodeURIComponent(url);
-    iframe.style.display = "none";
-    iframe.dataset.id = id;
-    iframe.sandbox = "allow-same-origin allow-scripts allow-forms allow-popups allow-modals";
-    
-    iframe.onload = () => {
-        try {
-            const title = iframe.contentDocument?.title;
-            if (title && title.trim()) {
-                activeTab.title = title;
-            } else {
-                activeTab.title = new URL(activeTab.url).hostname;
-            }
-        } catch (e) {
-            activeTab.title = new URL(activeTab.url).hostname || "New Tab";
-        }
-        renderTabs();
-    };
-    
-    iframe.onerror = () => {
-        console.error("Failed to load:", url);
-        activeTab.title = "Error loading page";
-        renderTabs();
-    };
-    
-    document.getElementById("iframes").appendChild(iframe);
-    
-    const tab = {
-        id,
-        url,
-        title: "Loading...",
-        iframe
-    };
-    
-    tabs.push(tab);
-    switchTab(id);
-    return tab;
+  const id = Date.now();
+  const iframe = document.createElement("iframe");
+  
+  // Set up iframe
+  iframe.src = proxy + encodeURIComponent(url);
+  iframe.style.display = "none";
+  iframe.dataset.id = id;
+  iframe.sandbox = "allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-popups-to-escape-sandbox";
+  
+  iframe.onload = () => {
+      try {
+          // Inject communication script into iframe
+          const script = document.createElement('script');
+          script.textContent = `
+              // Override window.open to open in our browser
+              const originalOpen = window.open;
+              window.open = function(url, target, features) {
+                  if (url && typeof url === 'string') {
+                      // Send message to parent window
+                      window.parent.postMessage({
+                          type: 'NEW_TAB',
+                          url: url
+                      }, '*');
+                      return {
+                          close: function() {
+                              window.parent.postMessage({
+                                  type: 'CLOSE_TAB',
+                                  url: url
+                              }, '*');
+                          }
+                      };
+                  }
+                  return originalOpen.apply(this, arguments);
+              };
+              
+              // Override window.close to close current tab
+              const originalClose = window.close;
+              window.close = function() {
+                  window.parent.postMessage({
+                      type: 'CLOSE_CURRENT_TAB'
+                  }, '*');
+                  return originalClose.apply(this, arguments);
+              };
+              
+              // Intercept links that open in new window
+              document.addEventListener('click', function(e) {
+                  let target = e.target;
+                  while (target && target.tagName !== 'A') {
+                      target = target.parentElement;
+                  }
+                  
+                  if (target && target.tagName === 'A') {
+                      const targetAttr = target.getAttribute('target');
+                      if (targetAttr && (targetAttr === '_blank' || targetAttr === 'new')) {
+                          e.preventDefault();
+                          const href = target.getAttribute('href');
+                          if (href) {
+                              window.parent.postMessage({
+                                  type: 'NEW_TAB',
+                                  url: href
+                              }, '*');
+                          }
+                      }
+                  }
+              });
+          `;
+          
+          // Try to inject script
+          try {
+              iframe.contentDocument.head.appendChild(script);
+          } catch (e) {
+              // Cross-origin restrictions may prevent injection
+              console.log("Cannot inject script due to cross-origin restrictions");
+          }
+          
+          const title = iframe.contentDocument?.title;
+          if (title && title.trim()) {
+              activeTab.title = title;
+          } else {
+              activeTab.title = new URL(activeTab.url).hostname;
+          }
+      } catch (e) {
+          activeTab.title = new URL(activeTab.url).hostname || "New Tab";
+      }
+      renderTabs();
+  };
+  
+  iframe.onerror = () => {
+      console.error("Failed to load:", url);
+      activeTab.title = "Error loading page";
+      renderTabs();
+  };
+  
+  document.getElementById("iframes").appendChild(iframe);
+  
+  const tab = {
+      id,
+      url,
+      title: "Loading...",
+      iframe
+  };
+  
+  tabs.push(tab);
+  switchTab(id);
+  return tab;
 }
 
 function switchTab(id) {
-    tabs.forEach(t => {
-        if (t.iframe) {
-            t.iframe.style.display = "none";
-        }
-    });
-    
-    activeTab = tabs.find(t => t.id === id);
-    
-    if (activeTab && activeTab.iframe) {
-        activeTab.iframe.style.display = "block";
-        document.getElementById("url").value = activeTab.url;
-        renderTabs();
-        updateBookmarkButton();
+  tabs.forEach(t => {
+    if (t.iframe) {
+      t.iframe.style.display = "none";
     }
+  });
+  
+  activeTab = tabs.find(t => t.id === id);
+  
+  if (activeTab && activeTab.iframe) {
+    activeTab.iframe.style.display = "block";
+    document.getElementById("url").value = activeTab.url;
+    renderTabs();
+    updateBookmarkButton();
+    updateNavButtonStates(); // Add this line
+    
+    // Try to get current URL from iframe (works for same-origin)
+    try {
+      const iframeUrl = activeTab.iframe.contentWindow.location.href;
+      if (iframeUrl && iframeUrl !== 'about:blank' && iframeUrl !== activeTab.url) {
+        activeTab.url = iframeUrl;
+        document.getElementById("url").value = iframeUrl;
+      }
+    } catch (e) {
+      // Cross-origin restriction, use stored URL
+    }
+  }
 }
 
 function closeTab(id) {
-    const idx = tabs.findIndex(t => t.id === id);
-    if (idx === -1) return;
-    
-    // Remove iframe from DOM
-    if (tabs[idx].iframe && tabs[idx].iframe.parentNode) {
-        tabs[idx].iframe.parentNode.removeChild(tabs[idx].iframe);
+  const idx = tabs.findIndex(t => t.id === id);
+  if (idx === -1) return;
+  
+  // Remove iframe from DOM
+  if (tabs[idx].iframe && tabs[idx].iframe.parentNode) {
+    tabs[idx].iframe.parentNode.removeChild(tabs[idx].iframe);
+  }
+  
+  tabs.splice(idx, 1);
+  
+  if (activeTab?.id === id) {
+    // Switch to nearest tab
+    const newIndex = Math.max(0, idx - 1);
+    if (tabs[newIndex]) {
+      switchTab(tabs[newIndex].id);
+    } else {
+      // No tabs left, create new one
+      newTab();
     }
-    
-    tabs.splice(idx, 1);
-    
-    if (activeTab?.id === id) {
-        // Switch to nearest tab
-        const newIndex = Math.max(0, idx - 1);
-        if (tabs[newIndex]) {
-            switchTab(tabs[newIndex].id);
-        } else {
-            // No tabs left, create new one
-            newTab();
-        }
-    }
-    
-    renderTabs();
+  }
+  
+  renderTabs();
+  updateNavButtonStates(); // Add this line
 }
+
+// ---------- Message Listener for iframe communication ----------
+window.addEventListener('message', function(event) {
+  // Security check - accept messages from our own origin only
+  if (event.origin !== window.location.origin && !event.data.type) return;
+  
+  switch(event.data.type) {
+      case 'NEW_TAB':
+          if (event.data.url) {
+              newTab(event.data.url);
+          }
+          break;
+          
+      case 'CLOSE_TAB':
+          if (event.data.url) {
+              const tab = tabs.find(t => t.url === event.data.url);
+              if (tab) closeTab(tab.id);
+          }
+          break;
+          
+      case 'CLOSE_CURRENT_TAB':
+          if (tabs.length > 1) {
+              closeTab(activeTab.id);
+          }
+          break;
+  }
+});
 
 // ---------- History & Bookmarks ----------
 function saveHistory(url) {
@@ -404,31 +577,31 @@ function deleteBookmarkItem(index) {
 }
 
 function addBookmark(url) {
-    if (!url || bookmarks.includes(url)) return;
-    
-    bookmarks.push(url);
-    localStorage.setItem("browserBookmarks", JSON.stringify(bookmarks));
-    renderBookmarks();
-    updateBookmarkButton();
+  if (!url || bookmarks.includes(url)) return;
+  
+  bookmarks.push(url);
+  localStorage.setItem("browserBookmarks", JSON.stringify(bookmarks));
+  renderBookmarks();
+  updateBookmarkButton();
 }
 
 function removeBookmark(url) {
-    const index = bookmarks.indexOf(url);
-    if (index > -1) {
-        bookmarks.splice(index, 1);
-        localStorage.setItem("browserBookmarks", JSON.stringify(bookmarks));
-        renderBookmarks();
-        updateBookmarkButton();
-    }
+  const index = bookmarks.indexOf(url);
+  if (index > -1) {
+    bookmarks.splice(index, 1);
+    localStorage.setItem("browserBookmarks", JSON.stringify(bookmarks));
+    renderBookmarks();
+    updateBookmarkButton();
+  }
 }
 
 // ---------- Clear History ----------
 document.getElementById("clearHistory").onclick = () => {
-    if (confirm("Clear all browsing history?")) {
-        history = [];
-        localStorage.setItem("browserHistory", "[]");
-        renderHistory();
-    }
+  if (confirm("Clear all browsing history?")) {
+    history = [];
+    localStorage.setItem("browserHistory", "[]");
+    renderHistory();
+  }
 };
 
 // ---------- Sidebar ----------
@@ -438,81 +611,247 @@ const toggleBtn = document.getElementById("toggleSidebar");
 toggleBtn.onclick = () => {
     sidebar.classList.toggle("collapsed");
     toggleBtn.querySelector("span").innerText = 
-        sidebar.classList.contains("collapsed") ? "chevron_right" : "chevron_left";
+      sidebar.classList.contains("collapsed") ? "chevron_right" : "chevron_left";
     toggleBtn.title = sidebar.classList.contains("collapsed") 
-        ? "Show Sidebar" 
-        : "Hide Sidebar";
+      ? "Show Sidebar" 
+      : "Hide Sidebar";
 };
 
-// ---------- Navigation ----------
+// ---------- Navigation Functions ----------
 function navigate(url) {
-    if (!url || typeof url !== 'string') return;
-    
-    // Add https:// if no protocol specified
-    if (!url.startsWith("http://") && !url.startsWith("https://")) {
-        url = "https://" + url;
-    }
-    
-    try {
-        // Validate URL
-        new URL(url);
-    } catch {
-        // If invalid, try search
-        url = `https://www.google.com/search?q=${encodeURIComponent(url)}`;
-    }
-    
-    if (!activeTab) {
-        newTab(url);
-    } else {
-        activeTab.url = url;
-        activeTab.title = "Loading...";
-        activeTab.iframe.src = proxy + encodeURIComponent(url);
-        document.getElementById("url").value = url;
-        saveHistory(url);
-        renderTabs();
-    }
+  if (!url || typeof url !== 'string') return;
+  
+  // Add https:// if no protocol specified
+  if (!url.startsWith("http://") && !url.startsWith("https://")) {
+    url = "https://" + url;
+  }
+  
+  try {
+    // Validate URL
+    new URL(url);
+  } catch {
+    // If invalid, try search
+    url = `https://www.google.com/search?q=${encodeURIComponent(url)}`;
+  }
+  
+  if (!activeTab) {
+    newTab(url);
+  } else {
+    activeTab.url = url;
+    activeTab.title = "Loading...";
+    activeTab.iframe.src = proxy + encodeURIComponent(url);
+    document.getElementById("url").value = url;
+    saveHistory(url);
+    renderTabs();
+  }
 }
 
-// ---------- Event Listeners ----------
-document.getElementById("go").onclick = () => 
-    navigate(document.getElementById("url").value.trim());
+// ---------- Button Event Listeners ----------
+document.getElementById("go").onclick = () => {
+  const url = document.getElementById("url").value.trim();
+  if (url) navigate(url);
+};
 
 document.getElementById("newtab").onclick = () => newTab();
 
-document.getElementById("back").onclick = () => 
-    activeTab?.iframe.contentWindow.history.back();
-
-document.getElementById("forward").onclick = () => 
-    activeTab?.iframe.contentWindow.history.forward();
-
-document.getElementById("reload").onclick = () => 
-    activeTab && (activeTab.iframe.src = activeTab.iframe.src);
-
-document.getElementById("home").onclick = () => 
-    navigate("https://proxy.jimmyqrg.com/default/");
-
-document.getElementById("bookmark").onclick = () => 
-    activeTab && addBookmark(activeTab.url);
-
-document.getElementById("url").addEventListener("keydown", e => {
-    if (e.key === "Enter") {
-        navigate(e.target.value.trim());
+document.getElementById("back").onclick = () => {
+  if (activeTab?.iframe?.contentWindow) {
+    try {
+      activeTab.iframe.contentWindow.history.back();
+      // Update URL after navigation
+      setTimeout(() => {
+        try {
+          const iframeUrl = activeTab.iframe.contentWindow.location.href;
+          if (iframeUrl && iframeUrl !== 'about:blank') {
+            activeTab.url = iframeUrl;
+            document.getElementById("url").value = iframeUrl;
+            saveHistory(iframeUrl);
+          }
+        } catch (e) {
+          // Cross-origin restriction
+        }
+      }, 100);
+    } catch (e) {
+      console.log("Cannot go back due to cross-origin restrictions");
     }
+  }
+};
+
+document.getElementById("forward").onclick = () => {
+  if (activeTab?.iframe?.contentWindow) {
+    try {
+      activeTab.iframe.contentWindow.history.forward();
+      // Update URL after navigation
+      setTimeout(() => {
+        try {
+          const iframeUrl = activeTab.iframe.contentWindow.location.href;
+          if (iframeUrl && iframeUrl !== 'about:blank') {
+            activeTab.url = iframeUrl;
+            document.getElementById("url").value = iframeUrl;
+            saveHistory(iframeUrl);
+          }
+        } catch (e) {
+          // Cross-origin restriction
+        }
+      }, 100);
+    } catch (e) {
+      console.log("Cannot go forward due to cross-origin restrictions");
+    }
+  }
+};
+
+document.getElementById("reload").onclick = () => {
+  if (activeTab) {
+    try {
+      activeTab.iframe.contentWindow.location.reload();
+    } catch (e) {
+      // Fallback to iframe src reload
+      activeTab.iframe.src = activeTab.iframe.src;
+    }
+  }
+};
+
+document.getElementById("home").onclick = () => {
+  navigate("https://proxy.jimmyqrg.com/default/");
+};
+
+document.getElementById("bookmark").onclick = () => {
+  if (activeTab && activeTab.url) {
+      addBookmark(activeTab.url);
+  }
+};
+
+// URL input handling
+document.getElementById("url").addEventListener("keydown", e => {
+  if (e.key === "Enter") {
+      navigate(e.target.value.trim());
+  }
 });
+
+// Update URL when iframe navigates
+function setupIframeNavigationListener(iframe) {
+  // This is tricky due to same-origin policy
+  // We'll update URL on tab switch as a workaround
+}
+
+// Update URL when tab is switched
+function switchTab(id) {
+  tabs.forEach(t => {
+      if (t.iframe) {
+          t.iframe.style.display = "none";
+      }
+  });
+  
+  activeTab = tabs.find(t => t.id === id);
+  
+  if (activeTab && activeTab.iframe) {
+    activeTab.iframe.style.display = "block";
+    document.getElementById("url").value = activeTab.url;
+    renderTabs();
+    updateBookmarkButton();
+    
+    // Try to get current URL from iframe (works for same-origin)
+    try {
+      const iframeUrl = activeTab.iframe.contentWindow.location.href;
+      if (iframeUrl && iframeUrl !== 'about:blank' && iframeUrl !== activeTab.url) {
+        activeTab.url = iframeUrl;
+        document.getElementById("url").value = iframeUrl;
+        }
+    } catch (e) {
+      // Cross-origin restriction, use stored URL
+    }
+  }
+}
 
 // Update bookmark button state
 function updateBookmarkButton() {
     const bookmarkBtn = document.getElementById("bookmark");
     if (activeTab && bookmarks.includes(activeTab.url)) {
-        bookmarkBtn.innerHTML = `<span class="material-icons" style="color: gold;">star</span>`;
+      bookmarkBtn.innerHTML = `<span class="material-icons" style="color: gold;">star</span>`;
     } else {
-        bookmarkBtn.innerHTML = `<span class="material-icons">star_border</span>`;
+      bookmarkBtn.innerHTML = `<span class="material-icons">star_border</span>`;
     }
 }
 
+// ---------- Update Navigation Button States ----------
+function updateNavButtonStates() {
+  const backBtn = document.getElementById("back");
+  const forwardBtn = document.getElementById("forward");
+  
+  if (activeTab?.iframe?.contentWindow) {
+      try {
+        // Try to check history length (may fail due to cross-origin)
+        backBtn.disabled = activeTab.iframe.contentWindow.history.length <= 1;
+        forwardBtn.disabled = true; // Hard to check forward state
+        
+        // Add/remove classes for visual feedback
+        if (backBtn.disabled) {
+          backBtn.classList.add('no-history');
+        } else {
+          backBtn.classList.remove('no-history');
+        }
+        
+        if (forwardBtn.disabled) {
+          forwardBtn.classList.add('no-history');
+        } else {
+          forwardBtn.classList.remove('no-history');
+        }
+      } catch (e) {
+        // Cross-origin restriction, use generic states
+        backBtn.disabled = false;
+        forwardBtn.disabled = false;
+        backBtn.classList.remove('no-history');
+        forwardBtn.classList.remove('no-history');
+      }
+  } else {
+    backBtn.disabled = true;
+    forwardBtn.disabled = true;
+    backBtn.classList.add('no-history');
+    forwardBtn.classList.add('no-history');
+  }
+}
+
+// Update button states periodically and on tab switch
+setInterval(updateNavButtonStates, 1000);
+
+document.getElementById("reload").onclick = () => {
+  if (activeTab) {
+    const reloadBtn = document.getElementById("reload");
+    
+    // Add loading animation
+    reloadBtn.classList.add('loading');
+    
+    try {
+        activeTab.iframe.contentWindow.location.reload();
+    } catch (e) {
+        // Fallback to iframe src reload
+        activeTab.iframe.src = activeTab.iframe.src;
+    }
+    
+    // Remove loading animation after 1 second
+    setTimeout(() => {
+        reloadBtn.classList.remove('loading');
+    }, 1000);
+  }
+};
+
 // ---------- Init ----------
 document.addEventListener('DOMContentLoaded', () => {
-    renderHistory();
-    renderBookmarks();
-    newTab();
+  renderHistory();
+  renderBookmarks();
+  newTab();
+  
+  // Initial button state update
+  updateNavButtonStates();
+  
+  // Also update button states when iframe loads
+  const observer = new MutationObserver(() => {
+      updateNavButtonStates();
+  });
+  
+  // Watch for iframe changes
+  observer.observe(document.getElementById("iframes"), {
+      childList: true,
+      subtree: true
+  });
 });

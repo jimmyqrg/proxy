@@ -195,3 +195,89 @@
     50% { opacity: 0.8; }
     100% { opacity: 0.5; }
 }
+
+/* Button hover effects */
+.nav-buttons button:hover,
+.action-buttons button:hover,
+.add-tab:hover {
+    background-color: rgba(0, 0, 0, 0.1);
+    border-radius: 4px;
+}
+
+.nav-buttons button:active,
+.action-buttons button:active,
+.add-tab:active {
+    background-color: rgba(0, 0, 0, 0.2);
+    transform: scale(0.95);
+}
+
+/* Disabled state for buttons when no action possible */
+.nav-buttons button:disabled,
+.action-buttons button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.nav-buttons button:disabled:hover,
+.action-buttons button:disabled:hover {
+    background-color: transparent;
+}
+
+/* Update back/forward button states based on history */
+#back.no-history,
+#forward.no-history {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Button hover effects */
+.nav-buttons button:hover,
+.action-buttons button:hover,
+.add-tab:hover {
+    background-color: rgba(0, 0, 0, 0.1);
+    border-radius: 4px;
+}
+
+.nav-buttons button:active,
+.action-buttons button:active,
+.add-tab:active {
+    background-color: rgba(0, 0, 0, 0.2);
+    transform: scale(0.95);
+    transition: transform 0.1s;
+}
+
+/* Disabled state for buttons when no action possible */
+.nav-buttons button:disabled,
+.action-buttons button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.nav-buttons button:disabled:hover,
+.action-buttons button:disabled:hover {
+    background-color: transparent;
+    transform: none;
+}
+
+/* Update back/forward button states based on history */
+#back.no-history,
+#forward.no-history {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+#back.no-history:hover,
+#forward.no-history:hover {
+    background-color: transparent;
+    transform: none;
+}
+
+/* Loading state for reload button */
+#reload.loading {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
