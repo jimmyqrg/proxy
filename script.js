@@ -368,6 +368,59 @@ function newTab(url = "https://proxy.jimmyqrg.com/default/") {
                         url: window.location.href
                     }, '*');
                 }
+                
+                // Proxy iframe src attributes
+                function proxyIframeSrc() {
+                    const iframes = document.querySelectorAll('iframe');
+                    
+                    iframes.forEach(iframe => {
+                        const originalSrc = iframe.getAttribute('src');
+                        if (originalSrc && !originalSrc.includes('${proxy}')) {
+                            try {
+                                let fullUrl;
+                                if (originalSrc.startsWith('http://') || originalSrc.startsWith('https://')) {
+                                    fullUrl = originalSrc;
+                                } else if (originalSrc.startsWith('//')) {
+                                    fullUrl = window.location.protocol + originalSrc;
+                                } else if (originalSrc.startsWith('/')) {
+                                    fullUrl = window.location.origin + originalSrc;
+                                } else {
+                                    fullUrl = new URL(originalSrc, window.location.href).href;
+                                }
+                                
+                                // Only proxy if it's a different origin
+                                if (!fullUrl.startsWith(window.location.origin)) {
+                                    const proxiedUrl = '${proxy}' + encodeURIComponent(fullUrl);
+                                    iframe.setAttribute('src', proxiedUrl);
+                                    iframe.setAttribute('data-original-src', originalSrc);
+                                }
+                            } catch (e) {
+                                // Invalid URL, skip
+                            }
+                        }
+                    });
+                }
+                
+                // Proxy iframes on page load
+                proxyIframeSrc();
+                
+                // Watch for dynamically added iframes
+                const iframeObserver = new MutationObserver(function(mutations) {
+                    mutations.forEach(function(mutation) {
+                        if (mutation.type === 'childList') {
+                            mutation.addedNodes.forEach(function(node) {
+                                if (node.tagName && node.tagName.toLowerCase() === 'iframe') {
+                                    setTimeout(proxyIframeSrc, 100);
+                                }
+                            });
+                        }
+                    });
+                });
+                
+                iframeObserver.observe(document.body, {
+                    childList: true,
+                    subtree: true
+                });
             `;
             
             try {
