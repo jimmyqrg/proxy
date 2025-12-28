@@ -4,3 +4,6 @@
 <br>
 <h3>For those who wants to fork it:</h3>
 <p>Please read the LISENCE carefully.</p>
+<br>
+<h3>If you want a dev tool:</h3>
+<p>Try <a href="https://tools.jimmyqrg.com/files/">this</a>.</p>
