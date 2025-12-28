@@ -30,7 +30,7 @@ function toggleTabCloak() {
         });
         
         // Update button appearance
-        tabCloakBtn.innerHTML = `<span class="material-icons" style="color: #34A853;">search</span>`;
+        tabCloakBtn.innerHTML = `<span class="material-icons" style="color: #34A853;">visibility</span>`;
         tabCloakBtn.title = "Disable tab cloak (Currently cloaked)";
         
         // Store cloak state
@@ -52,7 +52,7 @@ function toggleTabCloak() {
         });
         
         // Update button appearance
-        tabCloakBtn.innerHTML = `<span class="material-icons">search</span>`;
+        tabCloakBtn.innerHTML = `<span class="material-icons">visibility</span>`;
         tabCloakBtn.title = "Enable tab cloak";
         
         // Remove cloak state
@@ -845,7 +845,7 @@ document.addEventListener('DOMContentLoaded', () => {
             link.href = cloakIcon;
         });
         
-        tabCloakBtn.innerHTML = `<span class="material-icons" style="color: #34A853;">search</span>`;
+        tabCloakBtn.innerHTML = `<span class="material-icons" style="color: #34A853;">visibility</span>`;
         tabCloakBtn.title = "Disable tab cloak (Currently cloaked)";
     }
     
