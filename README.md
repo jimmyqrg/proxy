@@ -6,4 +6,4 @@
 <p>Please read the LISENCE carefully.</p>
 <br>
 <h3>If you want a dev tool:</h3>
-<p>Try <a href="https://tools.jimmyqrg.com/files/" target="_blank>this</a>.</p>
+<p>Try <a href="https://tools.jimmyqrg.com/files/" target="_blank">this</a>.</p>
