@@ -1,919 +1,600 @@
-const proxy = "https://proxy.ikunbeautiful.workers.dev/?url=";
-const tabs = [];
-let history = JSON.parse(localStorage.getItem("browserHistory") || "[]");
-let bookmarks = JSON.parse(localStorage.getItem("browserBookmarks") || "[]");
-let activeTab = null;
+// Configuration
+const API_BASE_URL = 'https://source.ikunbeautiful.workers.dev';
 
-// Track if we're initializing dark mode from device
-let isInitialDarkModeLoad = true;
+// State
+let currentData = null;
+let apiStatus = 'checking';
+let consoleLogs = [];
+let autoScroll = true;
+let consoleFilters = {
+    log: true,
+    warn: true,
+    error: true,
+    info: true,
+    debug: true,
+    global_error: true,
+    unhandled_rejection: true
+};
 
-// Tab cloak state
-let isTabCloaked = false;
-const cloakIcon = "https://spicy.jimmyqrg.com/cloak-images/pausd.png";
-const cloakTitle = "My Apps";
-const originalFaviconLight = "/favicon-light.png";
-const originalFaviconDark = "/favicon-dark.png";
-const originalTitle = "HackWize";
-
-// ---------- Tab Cloak Functions ----------
-function toggleTabCloak() {
-    isTabCloaked = !isTabCloaked;
-    const tabCloakBtn = document.getElementById("tabCloak");
+// Initialize function to be called from HTML
+function initApp() {
+    updateApiEndpoint();
+    checkApiStatus();
+    initConsoleFilters();
     
-    if (isTabCloaked) {
-        // Apply cloak
-        document.title = cloakTitle;
-        
-        // Update favicon links
-        document.querySelectorAll('link[rel="icon"]').forEach(link => {
-            link.href = cloakIcon;
+    // Enter key support
+    const urlInput = document.getElementById('url-input');
+    if (urlInput) {
+        urlInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') fetchSource();
         });
-        
-        // Update button appearance
-        tabCloakBtn.innerHTML = `<span class="material-icons" style="color: #34A853;">visibility</span>`;
-        tabCloakBtn.title = "Disable tab cloak (Currently cloaked)";
-        
-        // Store cloak state
-        localStorage.setItem("tabCloaked", "true");
-    } else {
-        // Remove cloak
-        updateBrowserTitle();
-        
-        // Restore original favicons
-        document.querySelectorAll('link[rel="icon"]').forEach(link => {
-            const media = link.getAttribute('media');
-            if (media === '(prefers-color-scheme: light)') {
-                link.href = originalFaviconLight;
-            } else if (media === '(prefers-color-scheme: dark)') {
-                link.href = originalFaviconDark;
-            } else {
-                link.href = originalFaviconLight;
-            }
+    }
+    
+    // Initialize highlight.js if available
+    if (typeof hljs !== 'undefined') {
+        hljs.configure({
+            languages: ['html', 'xml', 'json', 'javascript'],
+            cssSelector: 'pre code'
         });
-        
-        // Update button appearance
-        tabCloakBtn.innerHTML = `<span class="material-icons">visibility</span>`;
-        tabCloakBtn.title = "Enable tab cloak";
-        
-        // Remove cloak state
-        localStorage.setItem("tabCloaked", "false");
     }
-}
-
-function updateBrowserTitle() {
-    if (isTabCloaked) {
-        document.title = cloakTitle;
-    } else if (activeTab && activeTab.title && activeTab.title !== "Loading..." && activeTab.title !== "Error loading page") {
-        document.title = "HackWize - " + (activeTab.title.length > 30 ? activeTab.title.substring(0, 30) + "..." : activeTab.title);
-    } else {
-        document.title = originalTitle;
-    }
-}
-
-// ---------- Favicon Cache ----------
-const defaultFavicon = "https://spicy.jimmyqrg.com/cloak-images/default.png";
-const faviconCache = new Map();
-
-const favicon = async (url) => {
-    try {
-        const domain = new URL(url).hostname;
-        
-        if (faviconCache.has(domain)) {
-            return faviconCache.get(domain);
-        }
-        
-        const faviconUrls = [
-            `https://${domain}/favicon.ico`,
-            `https://${domain}/favicon.png`,
-            `https://${domain}/apple-touch-icon.png`,
-            `https://www.google.com/s2/favicons?domain=${domain}&sz=32`,
-            `https://icons.duckduckgo.com/ip3/${domain}.ico`
-        ];
-        
-        for (const favUrl of faviconUrls) {
-            try {
-                const response = await fetch(favUrl, { 
-                    method: 'HEAD',
-                    mode: 'no-cors'
-                });
-                
-                if (response.ok || response.type === 'opaque') {
-                    faviconCache.set(domain, favUrl);
-                    return favUrl;
+    
+    // Initialize console auto-scroll observer
+    const consoleContent = document.getElementById('console-content');
+    if (consoleContent) {
+        consoleContent.addEventListener('scroll', () => {
+            const isAtBottom = consoleContent.scrollHeight - consoleContent.clientHeight <= consoleContent.scrollTop + 1;
+            if (isAtBottom) {
+                const button = document.querySelector('.console-control-btn[onclick*="Auto-scroll"]');
+                if (button) {
+                    button.innerHTML = '📜 Auto-scroll (ON)';
                 }
-            } catch (e) {
-                // Continue to next URL
             }
-        }
-        
-        faviconCache.set(domain, defaultFavicon);
-        return defaultFavicon;
-    } catch {
-        return defaultFavicon;
-    }
-};
-
-// ---------- Dark Mode ----------
-const themeBtn = document.getElementById("theme");
-
-function getSystemTheme() {
-    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-}
-
-const setTheme = (dark) => {
-    if (isInitialDarkModeLoad && localStorage.getItem("darkMode") === null) {
-        dark = getSystemTheme();
+        });
     }
     
-    document.body.classList.toggle("dark", dark);
-    themeBtn.innerHTML = `<span class="material-icons">${dark ? "light_mode" : "dark_mode"}</span>`;
-    localStorage.setItem("darkMode", dark ? "1" : "0");
-    isInitialDarkModeLoad = false;
-};
-
-// Initialize theme
-const savedTheme = localStorage.getItem("darkMode");
-if (savedTheme !== null) {
-    setTheme(savedTheme === "1");
-} else {
-    setTheme(getSystemTheme());
+    console.log('App initialized successfully');
 }
 
-themeBtn.onclick = () => {
-    setTheme(!document.body.classList.contains("dark"));
-};
-
-if (window.matchMedia) {
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    mediaQuery.addEventListener('change', (e) => {
-        if (localStorage.getItem("darkMode") === null) {
-            setTheme(e.matches);
-        }
-    });
-}
-
-// ---------- Tab Preview ----------
-const preview = document.getElementById("tabPreview");
-let previewTimeout;
-
-// ---------- Render Tabs ----------
-async function renderTabs() {
-    const tabsDiv = document.getElementById("tabs");
-    tabsDiv.innerHTML = "";
+// Initialize console filter UI
+function initConsoleFilters() {
+    const filterContainer = document.getElementById('console-filter');
+    if (!filterContainer) return;
     
-    for (const t of tabs) {
-        const tabEl = document.createElement("div");
-        tabEl.className = "tab" + (t === activeTab ? " active" : "");
-        tabEl.dataset.id = t.id;
-        
-        const displayTitle = t.title && t.title.length > 20 
-            ? t.title.substring(0, 20) + "..." 
-            : t.title || new URL(t.url).hostname || "New Tab";
-        
-        const faviconUrl = await favicon(t.url);
-        
-        tabEl.innerHTML = `
-            <img src="${faviconUrl}" alt="favicon" onerror="this.src='${defaultFavicon}'">
-            <span>${displayTitle}</span>
-            <button class="close-tab" title="Close tab">&times;</button>
+    const types = [
+        { id: 'log', label: 'Log', color: '#007acc' },
+        { id: 'warn', label: 'Warn', color: '#cca700' },
+        { id: 'error', label: 'Error', color: '#f44747' },
+        { id: 'info', label: 'Info', color: '#4ec9b0' },
+        { id: 'debug', label: 'Debug', color: '#888' },
+        { id: 'global_error', label: 'Global Error', color: '#d16969' },
+        { id: 'unhandled_rejection', label: 'Promise Error', color: '#c586c0' }
+    ];
+    
+    types.forEach(type => {
+        const label = document.createElement('label');
+        label.className = 'filter-checkbox';
+        label.innerHTML = `
+            <input type="checkbox" id="filter-${type.id}" checked 
+                   onchange="toggleConsoleFilter('${type.id}', this.checked)">
+            <span style="color: ${type.color}">${type.label}</span>
         `;
-        
-        tabEl.onclick = (e) => {
-            if (!e.target.classList.contains('close-tab')) {
-                switchTab(t.id);
-            }
-        };
-        
-        tabEl.querySelector(".close-tab").onclick = e => {
-            e.stopPropagation();
-            closeTab(t.id);
-        };
-        
-        // Tab hover preview
-        tabEl.onmouseenter = e => {
-            clearTimeout(previewTimeout);
-            previewTimeout = setTimeout(() => {
-                if (t.iframe && t.iframe.src.startsWith(window.location.origin)) {
-                    preview.innerHTML = '';
-                    const clone = t.iframe.cloneNode(true);
-                    clone.style.pointerEvents = 'none';
-                    clone.style.transform = 'scale(0.5)';
-                    clone.style.transformOrigin = 'top left';
-                    clone.style.width = '600px';
-                    clone.style.height = '400px';
-                    preview.appendChild(clone);
-                } else {
-                    preview.innerHTML = `<div style="padding:10px;"><strong>${t.title || t.url}</strong><br><small>${t.url}</small></div>`;
-                }
-                preview.style.display = 'block';
-                updatePreviewPosition(e);
-            }, 300);
-        };
-        
-        tabEl.onmousemove = updatePreviewPosition;
-        tabEl.onmouseleave = () => {
-            clearTimeout(previewTimeout);
-            preview.style.display = 'none';
-        };
-        
-        tabsDiv.appendChild(tabEl);
-    }
-    
-    attachDragEvents();
-}
-
-function updatePreviewPosition(e) {
-    const previewRect = preview.getBoundingClientRect();
-    const x = Math.min(e.pageX, window.innerWidth - previewRect.width - 10);
-    const y = Math.min(e.pageY + 20, window.innerHeight - previewRect.height - 10);
-    preview.style.left = x + 'px';
-    preview.style.top = y + 'px';
-}
-
-// ---------- Drag & Reorder ----------
-let dragSrcEl = null;
-
-function handleDragStart(e) {
-    dragSrcEl = e.currentTarget;
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', dragSrcEl.dataset.id);
-}
-
-function handleDragOver(e) {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-}
-
-function handleDrop(e) {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    if (dragSrcEl !== e.currentTarget) {
-        const fromId = dragSrcEl.dataset.id;
-        const toId = e.currentTarget.dataset.id;
-        const fromIndex = tabs.findIndex(t => t.id == fromId);
-        const toIndex = tabs.findIndex(t => t.id == toId);
-        
-        if (fromIndex !== -1 && toIndex !== -1) {
-            const [removed] = tabs.splice(fromIndex, 1);
-            tabs.splice(toIndex, 0, removed);
-            renderTabs();
-            attachDragEvents();
-        }
-    }
-}
-
-function attachDragEvents() {
-    document.querySelectorAll('.tab').forEach(tab => {
-        tab.draggable = true;
-        tab.addEventListener('dragstart', handleDragStart);
-        tab.addEventListener('dragover', handleDragOver);
-        tab.addEventListener('drop', handleDrop);
+        filterContainer.appendChild(label);
     });
 }
 
-// ---------- Tab Management ----------
-function newTab(url = "https://proxy.jimmyqrg.com/default/") {
-    const id = Date.now();
-    const iframe = document.createElement("iframe");
-    
-    iframe.src = proxy + encodeURIComponent(url);
-    iframe.style.display = "none";
-    iframe.dataset.id = id;
-    iframe.sandbox = "allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-popups-to-escape-sandbox";
-    
-    iframe.onload = () => {
-        try {
-            const script = document.createElement('script');
-            script.textContent = `
-                // Override window.open to open in our browser
-                const originalOpen = window.open;
-                window.open = function(url, target, features) {
-                    if (url && typeof url === 'string') {
-                        window.parent.postMessage({
-                            type: 'NEW_TAB',
-                            url: url
-                        }, '*');
-                        return {
-                            close: function() {
-                                window.parent.postMessage({
-                                    type: 'CLOSE_TAB',
-                                    url: url
-                                }, '*');
-                            }
-                        };
-                    }
-                    return originalOpen.apply(this, arguments);
-                };
-                
-                // Override window.close to close current tab
-                const originalClose = window.close;
-                window.close = function() {
-                    window.parent.postMessage({
-                        type: 'CLOSE_CURRENT_TAB'
-                    }, '*');
-                    return originalClose.apply(this, arguments);
-                };
-                
-                // Intercept links that open in new window
-                document.addEventListener('click', function(e) {
-                    let target = e.target;
-                    while (target && target.tagName !== 'A') {
-                        target = target.parentElement;
-                    }
-                    
-                    if (target && target.tagName === 'A') {
-                        const targetAttr = target.getAttribute('target');
-                        if (targetAttr && (targetAttr === '_blank' || targetAttr === 'new')) {
-                            e.preventDefault();
-                            const href = target.getAttribute('href');
-                            if (href) {
-                                window.parent.postMessage({
-                                    type: 'NEW_TAB',
-                                    url: href
-                                }, '*');
-                            }
-                        }
-                    }
-                });
-                
-                // Update parent when title changes
-                let lastTitle = document.title;
-                const observer = new MutationObserver(function(mutations) {
-                    mutations.forEach(function(mutation) {
-                        if (mutation.target === document.querySelector('title')) {
-                            if (document.title !== lastTitle) {
-                                lastTitle = document.title;
-                                window.parent.postMessage({
-                                    type: 'UPDATE_TITLE',
-                                    title: document.title,
-                                    url: window.location.href
-                                }, '*');
-                            }
-                        }
-                    });
-                });
-                
-                // Observe title element
-                const titleElement = document.querySelector('title');
-                if (titleElement) {
-                    observer.observe(titleElement, { subtree: true, characterData: true, childList: true });
-                }
-                
-                // Send initial title
-                if (document.title) {
-                    window.parent.postMessage({
-                        type: 'UPDATE_TITLE',
-                        title: document.title,
-                        url: window.location.href
-                    }, '*');
-                }
-                
-                // Proxy iframe src attributes
-                function proxyIframeSrc() {
-                    const iframes = document.querySelectorAll('iframe');
-                    
-                    iframes.forEach(iframe => {
-                        const originalSrc = iframe.getAttribute('src');
-                        if (originalSrc && !originalSrc.includes('${proxy}')) {
-                            try {
-                                let fullUrl;
-                                if (originalSrc.startsWith('http://') || originalSrc.startsWith('https://')) {
-                                    fullUrl = originalSrc;
-                                } else if (originalSrc.startsWith('//')) {
-                                    fullUrl = window.location.protocol + originalSrc;
-                                } else if (originalSrc.startsWith('/')) {
-                                    fullUrl = window.location.origin + originalSrc;
-                                } else {
-                                    fullUrl = new URL(originalSrc, window.location.href).href;
-                                }
-                                
-                                // Only proxy if it's a different origin
-                                if (!fullUrl.startsWith(window.location.origin)) {
-                                    const proxiedUrl = '${proxy}' + encodeURIComponent(fullUrl);
-                                    iframe.setAttribute('src', proxiedUrl);
-                                    iframe.setAttribute('data-original-src', originalSrc);
-                                }
-                            } catch (e) {
-                                // Invalid URL, skip
-                            }
-                        }
-                    });
-                }
-                
-                // Proxy iframes on page load
-                proxyIframeSrc();
-                
-                // Watch for dynamically added iframes
-                const iframeObserver = new MutationObserver(function(mutations) {
-                    mutations.forEach(function(mutation) {
-                        if (mutation.type === 'childList') {
-                            mutation.addedNodes.forEach(function(node) {
-                                if (node.tagName && node.tagName.toLowerCase() === 'iframe') {
-                                    setTimeout(proxyIframeSrc, 100);
-                                }
-                            });
-                        }
-                    });
-                });
-                
-                iframeObserver.observe(document.body, {
-                    childList: true,
-                    subtree: true
-                });
-            `;
-            
-            try {
-                iframe.contentDocument.head.appendChild(script);
-            } catch (e) {
-                // Cross-origin restrictions may prevent injection
-            }
-            
-            // Try to get title from iframe
-            try {
-                const title = iframe.contentDocument?.title;
-                if (title && title.trim()) {
-                    activeTab.title = title;
-                } else {
-                    activeTab.title = new URL(activeTab.url).hostname;
-                }
-            } catch (e) {
-                activeTab.title = new URL(activeTab.url).hostname || "New Tab";
-            }
-        } catch (e) {
-            activeTab.title = new URL(activeTab.url).hostname || "New Tab";
-        }
-        
-        updateBrowserTitle();
-        renderTabs();
-    };
-    
-    iframe.onerror = () => {
-        console.error("Failed to load:", url);
-        activeTab.title = "Error loading page";
-        updateBrowserTitle();
-        renderTabs();
-    };
-    
-    document.getElementById("iframes").appendChild(iframe);
-    
-    const tab = {
-        id,
-        url,
-        title: "Loading...",
-        iframe
-    };
-    
-    tabs.push(tab);
-    switchTab(id);
-    return tab;
+// Toggle console filter
+function toggleConsoleFilter(type, enabled) {
+    consoleFilters[type] = enabled;
+    renderConsoleLogs();
 }
 
-function switchTab(id) {
-    tabs.forEach(t => {
-        if (t.iframe) {
-            t.iframe.style.display = "none";
-        }
-    });
-    
-    activeTab = tabs.find(t => t.id === id);
-    
-    if (activeTab && activeTab.iframe) {
-        activeTab.iframe.style.display = "block";
-        document.getElementById("url").value = activeTab.url;
-        renderTabs();
-        updateBookmarkButton();
-        updateNavButtonStates();
-        updateBrowserTitle();
-        
-        try {
-            const iframeUrl = activeTab.iframe.contentWindow.location.href;
-            if (iframeUrl && iframeUrl !== 'about:blank' && iframeUrl !== activeTab.url) {
-                activeTab.url = iframeUrl;
-                document.getElementById("url").value = iframeUrl;
-            }
-        } catch (e) {
-            // Cross-origin restriction, use stored URL
-        }
+// Update displayed API endpoint
+function updateApiEndpoint() {
+    const endpointElement = document.getElementById('api-endpoint');
+    if (endpointElement) {
+        endpointElement.textContent = API_BASE_URL;
     }
 }
 
-function closeTab(id) {
-    const idx = tabs.findIndex(t => t.id === id);
-    if (idx === -1) return;
+// Check if API is reachable
+async function checkApiStatus() {
+    const statusDot = document.getElementById('status-dot');
+    const statusText = document.getElementById('api-status-text');
     
-    const wasActive = activeTab?.id === id;
+    if (!statusDot || !statusText) return;
     
-    if (tabs[idx].iframe && tabs[idx].iframe.parentNode) {
-        tabs[idx].iframe.parentNode.removeChild(tabs[idx].iframe);
-    }
-    
-    tabs.splice(idx, 1);
-    
-    if (wasActive) {
-        const newIndex = Math.max(0, idx - 1);
-        if (tabs[newIndex]) {
-            switchTab(tabs[newIndex].id);
+    try {
+        const response = await fetch(`${API_BASE_URL}/health`, {
+            signal: AbortSignal.timeout(5000)
+        });
+        
+        if (response.ok) {
+            apiStatus = 'connected';
+            statusDot.className = 'status-dot';
+            statusText.textContent = 'API Connected';
         } else {
-            newTab();
+            throw new Error('API not responding');
         }
-    }
-    
-    renderTabs();
-    updateNavButtonStates();
-}
-
-// ---------- Message Listener ----------
-window.addEventListener('message', function(event) {
-    if (!event.data.type) return;
-    
-    switch(event.data.type) {
-        case 'NEW_TAB':
-            if (event.data.url) {
-                newTab(event.data.url);
-            }
-            break;
-            
-        case 'CLOSE_TAB':
-            if (event.data.url) {
-                const tab = tabs.find(t => t.url === event.data.url);
-                if (tab) closeTab(tab.id);
-            }
-            break;
-            
-        case 'CLOSE_CURRENT_TAB':
-            if (tabs.length > 1) {
-                closeTab(activeTab.id);
-            }
-            break;
-            
-        case 'UPDATE_TITLE':
-            if (event.data.title && event.data.url) {
-                const tab = tabs.find(t => t.url === event.data.url);
-                if (tab) {
-                    tab.title = event.data.title;
-                    if (tab === activeTab) {
-                        updateBrowserTitle();
-                    }
-                    renderTabs();
-                }
-            }
-            break;
-    }
-});
-
-// ---------- History & Bookmarks ----------
-function saveHistory(url) {
-    if (url.includes(proxy) || history[history.length - 1] === url) return;
-    
-    history.push(url);
-    if (history.length > 100) {
-        history = history.slice(-100);
-    }
-    localStorage.setItem("browserHistory", JSON.stringify(history));
-    renderHistory();
-}
-
-async function renderHistory() {
-    const h = document.getElementById("history");
-    h.innerHTML = "";
-    
-    const reversedHistory = history.slice().reverse();
-    
-    for (let i = 0; i < reversedHistory.length; i++) {
-        const u = reversedHistory[i];
-        const d = document.createElement("div");
-        d.className = "item history-item";
-        d.title = u;
-        d.dataset.index = i;
-        
-        const faviconUrl = await favicon(u);
-        d.innerHTML = `
-            <img src="${faviconUrl}" alt="favicon" onerror="this.src='${defaultFavicon}'">
-            <span class="item-text">${new URL(u).hostname || u}</span>
-            <button class="delete-item" title="Delete this item" style="margin-left: auto; opacity: 0; transition: opacity 0.2s;">
-                <span class="material-icons" style="font-size: 18px;">close</span>
-            </button>
-        `;
-        
-        d.onclick = (e) => {
-            if (!e.target.closest('.delete-item')) {
-                navigate(u);
-            }
-        };
-        
-        const deleteBtn = d.querySelector('.delete-item');
-        deleteBtn.onclick = (e) => {
-            e.stopPropagation();
-            deleteHistoryItem(i);
-        };
-        
-        d.onmouseenter = () => {
-            deleteBtn.style.opacity = '0.75';
-        };
-        
-        d.onmouseleave = () => {
-            deleteBtn.style.opacity = '0';
-        };
-        
-        h.appendChild(d);
+    } catch (error) {
+        apiStatus = 'disconnected';
+        statusDot.className = 'status-dot disconnected';
+        statusText.textContent = 'API Disconnected';
+        console.warn('API check failed:', error);
     }
 }
 
-function deleteHistoryItem(reversedIndex) {
-    const originalIndex = history.length - 1 - reversedIndex;
-    if (originalIndex >= 0 && originalIndex < history.length) {
-        history.splice(originalIndex, 1);
-        localStorage.setItem("browserHistory", JSON.stringify(history));
-        renderHistory();
-    }
-}
-
-async function renderBookmarks() {
-    const b = document.getElementById("bookmarks");
-    b.innerHTML = "";
+// Fetch website source
+async function fetchSource() {
+    const urlInput = document.getElementById('url-input');
+    if (!urlInput) return;
     
-    for (let i = 0; i < bookmarks.length; i++) {
-        const u = bookmarks[i];
-        const d = document.createElement("div");
-        d.className = "item bookmark-item";
-        d.title = u;
-        d.dataset.index = i;
-        
-        const faviconUrl = await favicon(u);
-        d.innerHTML = `
-            <img src="${faviconUrl}" alt="favicon" onerror="this.src='${defaultFavicon}'">
-            <span class="item-text">${new URL(u).hostname || u}</span>
-            <button class="delete-item" title="Delete this bookmark" style="margin-left: auto; opacity: 0; transition: opacity 0.2s;">
-                <span class="material-icons" style="font-size: 18px;">close</span>
-            </button>
-        `;
-        
-        d.onclick = (e) => {
-            if (!e.target.closest('.delete-item')) {
-                navigate(u);
-            }
-        };
-        
-        const deleteBtn = d.querySelector('.delete-item');
-        deleteBtn.onclick = (e) => {
-            e.stopPropagation();
-            deleteBookmarkItem(i);
-        };
-        
-        d.onmouseenter = () => {
-            deleteBtn.style.opacity = '0.75';
-        };
-        
-        d.onmouseleave = () => {
-            deleteBtn.style.opacity = '0';
-        };
-        
-        b.appendChild(d);
-    }
-}
-
-function deleteBookmarkItem(index) {
-    if (index >= 0 && index < bookmarks.length) {
-        bookmarks.splice(index, 1);
-        localStorage.setItem("browserBookmarks", JSON.stringify(bookmarks));
-        renderBookmarks();
-        updateBookmarkButton();
-    }
-}
-
-function toggleBookmark(url) {
-    if (!url) return;
+    const url = urlInput.value.trim();
+    const executeJS = document.getElementById('execute-js')?.checked || false;
+    const captureConsole = document.getElementById('capture-console')?.checked || false;
     
-    const index = bookmarks.indexOf(url);
-    if (index > -1) {
-        bookmarks.splice(index, 1);
-    } else {
-        bookmarks.push(url);
+    if (!url) {
+        showError('Please enter a URL');
+        return;
     }
     
-    localStorage.setItem("browserBookmarks", JSON.stringify(bookmarks));
-    renderBookmarks();
-    updateBookmarkButton();
-}
-
-// ---------- Clear History ----------
-document.getElementById("clearHistory").onclick = () => {
-    if (confirm("Clear all browsing history?")) {
-        history = [];
-        localStorage.setItem("browserHistory", "[]");
-        renderHistory();
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        showError('URL must start with http:// or https://');
+        return;
     }
-};
-
-// ---------- Sidebar ----------
-const sidebar = document.getElementById("sidebar");
-const toggleBtn = document.getElementById("toggleSidebar");
-
-toggleBtn.onclick = () => {
-    sidebar.classList.toggle("collapsed");
-    toggleBtn.querySelector("span").innerText = 
-        sidebar.classList.contains("collapsed") ? "chevron_right" : "chevron_left";
-    toggleBtn.title = sidebar.classList.contains("collapsed") 
-        ? "Show Sidebar" 
-        : "Hide Sidebar";
-};
-
-// ---------- Navigation ----------
-function navigate(url) {
-    if (!url || typeof url !== 'string') return;
     
-    if (!url.startsWith("http://") && !url.startsWith("https://")) {
-        url = "https://" + url;
+    // Show loading
+    const loadingElement = document.getElementById('loading');
+    const resultsElement = document.getElementById('results');
+    const errorCard = document.getElementById('error-card');
+    
+    if (loadingElement) loadingElement.style.display = 'block';
+    if (resultsElement) resultsElement.style.display = 'none';
+    if (errorCard) errorCard.style.display = 'none';
+    
+    // Show JS execution status if enabled
+    const jsStatus = document.getElementById('js-status');
+    const jsResults = document.getElementById('js-results');
+    
+    if (executeJS && jsStatus) {
+        jsStatus.style.display = 'flex';
+    }
+    if (jsResults) {
+        jsResults.style.display = 'none';
     }
     
     try {
-        new URL(url);
-    } catch {
-        url = `https://www.google.com/search?q=${encodeURIComponent(url)}`;
-    }
-    
-    if (!activeTab) {
-        newTab(url);
-    } else {
-        activeTab.url = url;
-        activeTab.title = "Loading...";
-        activeTab.iframe.src = proxy + encodeURIComponent(url);
-        document.getElementById("url").value = url;
-        saveHistory(url);
-        updateBrowserTitle();
-        renderTabs();
-    }
-}
-
-// ---------- Button Event Listeners ----------
-document.getElementById("go").onclick = () => {
-    const url = document.getElementById("url").value.trim();
-    if (url) navigate(url);
-};
-
-document.getElementById("newtab").onclick = () => newTab();
-
-document.getElementById("back").onclick = () => {
-    if (activeTab?.iframe?.contentWindow) {
-        try {
-            activeTab.iframe.contentWindow.history.back();
-            setTimeout(() => {
-                try {
-                    const iframeUrl = activeTab.iframe.contentWindow.location.href;
-                    if (iframeUrl && iframeUrl !== 'about:blank') {
-                        activeTab.url = iframeUrl;
-                        document.getElementById("url").value = iframeUrl;
-                        saveHistory(iframeUrl);
-                    }
-                } catch (e) {
-                    // Cross-origin restriction
-                }
-            }, 100);
-        } catch (e) {
-            console.log("Cannot go back due to cross-origin restrictions");
-        }
-    }
-};
-
-document.getElementById("forward").onclick = () => {
-    if (activeTab?.iframe?.contentWindow) {
-        try {
-            activeTab.iframe.contentWindow.history.forward();
-            setTimeout(() => {
-                try {
-                    const iframeUrl = activeTab.iframe.contentWindow.location.href;
-                    if (iframeUrl && iframeUrl !== 'about:blank') {
-                        activeTab.url = iframeUrl;
-                        document.getElementById("url").value = iframeUrl;
-                        saveHistory(iframeUrl);
-                    }
-                } catch (e) {
-                    // Cross-origin restriction
-                }
-            }, 100);
-        } catch (e) {
-            console.log("Cannot go forward due to cross-origin restrictions");
-        }
-    }
-};
-
-document.getElementById("reload").onclick = () => {
-    if (activeTab) {
-        const reloadBtn = document.getElementById("reload");
-        reloadBtn.classList.add('loading');
-        
-        try {
-            activeTab.iframe.contentWindow.location.reload();
-        } catch (e) {
-            activeTab.iframe.src = activeTab.iframe.src;
-        }
-        
-        setTimeout(() => {
-            reloadBtn.classList.remove('loading');
-        }, 1000);
-    }
-};
-
-document.getElementById("home").onclick = () => {
-    navigate("https://proxy.jimmyqrg.com/default/");
-};
-
-document.getElementById("bookmark").onclick = () => {
-    if (activeTab && activeTab.url) {
-        toggleBookmark(activeTab.url);
-    }
-};
-
-document.getElementById("tabCloak").onclick = toggleTabCloak;
-
-// URL input handling
-document.getElementById("url").addEventListener("keydown", e => {
-    if (e.key === "Enter") {
-        navigate(e.target.value.trim());
-    }
-});
-
-// Update bookmark button state
-function updateBookmarkButton() {
-    const bookmarkBtn = document.getElementById("bookmark");
-    if (activeTab && bookmarks.includes(activeTab.url)) {
-        bookmarkBtn.innerHTML = `<span class="material-icons" style="color: gold;">star</span>`;
-        bookmarkBtn.title = "Remove bookmark";
-    } else {
-        bookmarkBtn.innerHTML = `<span class="material-icons">star_border</span>`;
-        bookmarkBtn.title = "Add bookmark";
-    }
-}
-
-// ---------- Update Navigation Button States ----------
-function updateNavButtonStates() {
-    const backBtn = document.getElementById("back");
-    const forwardBtn = document.getElementById("forward");
-    
-    if (activeTab?.iframe?.contentWindow) {
-        try {
-            backBtn.disabled = activeTab.iframe.contentWindow.history.length <= 1;
-            forwardBtn.disabled = true;
-            
-            if (backBtn.disabled) {
-                backBtn.classList.add('no-history');
-            } else {
-                backBtn.classList.remove('no-history');
-            }
-            
-            if (forwardBtn.disabled) {
-                forwardBtn.classList.add('no-history');
-            } else {
-                forwardBtn.classList.remove('no-history');
-            }
-        } catch (e) {
-            backBtn.disabled = false;
-            forwardBtn.disabled = false;
-            backBtn.classList.remove('no-history');
-            forwardBtn.classList.remove('no-history');
-        }
-    } else {
-        backBtn.disabled = true;
-        forwardBtn.disabled = true;
-        backBtn.classList.add('no-history');
-        forwardBtn.classList.add('no-history');
-    }
-}
-
-// Update button states periodically
-setInterval(updateNavButtonStates, 1000);
-
-// ---------- Init ----------
-document.addEventListener('DOMContentLoaded', () => {
-    // Check saved cloak state
-    const savedCloakState = localStorage.getItem("tabCloaked");
-    if (savedCloakState === "true") {
-        isTabCloaked = true;
-        const tabCloakBtn = document.getElementById("tabCloak");
-        
-        // Apply cloak immediately
-        document.title = cloakTitle;
-        document.querySelectorAll('link[rel="icon"]').forEach(link => {
-            link.href = cloakIcon;
+        const params = new URLSearchParams({
+            url: url,
+            executeJs: executeJS.toString()
         });
         
-        tabCloakBtn.innerHTML = `<span class="material-icons" style="color: #34A853;">visibility</span>`;
-        tabCloakBtn.title = "Disable tab cloak (Currently cloaked)";
+        const apiUrl = `${API_BASE_URL}/api/fetch?${params}`;
+        console.log('Fetching from:', apiUrl);
+        
+        const response = await fetch(apiUrl, {
+            signal: AbortSignal.timeout(30000)
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || `HTTP ${response.status}`);
+        }
+        
+        currentData = data;
+        consoleLogs = data.javascript?.consoleLogs || [];
+        
+        // Update JS execution results
+        if (executeJS && jsStatus && jsResults) {
+            jsStatus.style.display = 'none';
+            jsResults.style.display = 'flex';
+            jsResults.className = 'execution-status success';
+            
+            const logsCount = consoleLogs.length;
+            const errorsCount = data.javascript?.errors?.length || 0;
+            
+            let resultText = `JavaScript executed`;
+            if (logsCount > 0) resultText += `, ${logsCount} console logs`;
+            if (errorsCount > 0) resultText += `, ${errorsCount} errors`;
+            
+            jsResults.innerHTML = `<span>✓</span> <span>${resultText}</span>`;
+            
+            if (errorsCount > 0) {
+                jsResults.className = 'execution-status error';
+                jsResults.innerHTML = `<span>✗</span> <span>${errorsCount} execution errors</span>`;
+            }
+        }
+        
+        displayResults(data);
+        
+    } catch (error) {
+        console.error('Fetch error:', error);
+        showError(error.message || 'Failed to fetch website source');
+        
+        // Hide JS status on error
+        if (jsStatus) jsStatus.style.display = 'none';
+        if (jsResults) jsResults.style.display = 'none';
+    } finally {
+        if (loadingElement) loadingElement.style.display = 'none';
+    }
+}
+
+// Display results
+function displayResults(data) {
+    const formatHtml = document.getElementById('format-html')?.checked || false;
+    const showPreview = document.getElementById('show-preview')?.checked || false;
+    
+    // Display source code
+    let source = data.source;
+    if (formatHtml) {
+        source = formatHTML(source);
     }
     
-    renderHistory();
-    renderBookmarks();
-    newTab();
+    const sourceCode = document.getElementById('source-code');
+    if (sourceCode) {
+        sourceCode.textContent = source;
+        
+        // Apply syntax highlighting if available
+        if (typeof hljs !== 'undefined') {
+            hljs.highlightElement(sourceCode);
+        }
+    }
     
-    updateNavButtonStates();
+    // Display headers
+    const headersCode = document.getElementById('headers-code');
+    if (headersCode) {
+        headersCode.textContent = JSON.stringify(data.headers || {}, null, 2);
+        if (typeof hljs !== 'undefined') {
+            hljs.highlightElement(headersCode);
+        }
+    }
     
-    const observer = new MutationObserver(() => {
-        updateNavButtonStates();
+    // Display preview if enabled
+    if (showPreview && data.contentType && data.contentType.includes('text/html')) {
+        const previewFrame = document.getElementById('preview-frame');
+        if (previewFrame) {
+            const previewDoc = previewFrame.contentDocument || previewFrame.contentWindow.document;
+            previewDoc.open();
+            previewDoc.write(data.source);
+            previewDoc.close();
+        }
+    }
+    
+    // Update tabs visibility
+    const consoleTab = document.querySelector('.tab[onclick*="console"]');
+    const previewTab = document.querySelector('.tab[onclick*="preview"]');
+    
+    if (consoleTab) {
+        consoleTab.style.display = 
+            data.javascript?.executed && consoleLogs.length > 0 ? 'flex' : 'none';
+    }
+    
+    if (previewTab) {
+        previewTab.style.display = 
+            showPreview && data.contentType && data.contentType.includes('text/html') ? 'flex' : 'none';
+    }
+    
+    // Render console logs
+    if (data.javascript?.executed) {
+        renderConsoleLogs();
+    }
+    
+    // Update statistics
+    updateStats(data);
+    
+    // Show results
+    const resultsElement = document.getElementById('results');
+    if (resultsElement) {
+        resultsElement.style.display = 'block';
+    }
+}
+
+// Render console logs
+function renderConsoleLogs() {
+    const consoleContent = document.getElementById('console-content');
+    const searchInput = document.getElementById('console-search');
+    const searchTerm = searchInput ? searchInput.value.toLowerCase() : '';
+    
+    if (!consoleContent) return;
+    
+    // Filter logs
+    const filteredLogs = consoleLogs.filter(log => {
+        // Apply type filter
+        if (!consoleFilters[log.type]) return false;
+        
+        // Apply search filter
+        if (searchTerm) {
+            const logText = JSON.stringify(log).toLowerCase();
+            if (!logText.includes(searchTerm)) return false;
+        }
+        
+        return true;
     });
     
-    observer.observe(document.getElementById("iframes"), {
-        childList: true,
-        subtree: true
+    // Update stats
+    updateConsoleStats();
+    
+    if (filteredLogs.length === 0) {
+        consoleContent.innerHTML = '<div class="console-empty">No logs match the current filters.</div>';
+        return;
+    }
+    
+    // Render logs
+    consoleContent.innerHTML = '';
+    filteredLogs.forEach((log, index) => {
+        const entry = document.createElement('div');
+        entry.className = 'console-entry';
+        entry.dataset.index = index;
+        
+        // Format timestamp
+        const timestamp = new Date(log.timestamp).toLocaleTimeString();
+        
+        // Format message
+        let message = '';
+        if (log.args && Array.isArray(log.args)) {
+            message = log.args.map(arg => {
+                try {
+                    // Try to parse as JSON for pretty printing
+                    const parsed = JSON.parse(arg);
+                    return `<span class="console-arg">${JSON.stringify(parsed, null, 2)}</span>`;
+                } catch {
+                    return `<span class="console-arg">${arg}</span>`;
+                }
+            }).join(' ');
+        } else if (log.message) {
+            message = `<span class="console-arg">${log.message}</span>`;
+        }
+        
+        // Check if there's stack trace
+        const hasStack = log.stack || (log.type === 'global_error' && log.stack);
+        
+        entry.innerHTML = `
+            <div class="console-timestamp">${timestamp}</div>
+            <div class="console-type console-type-${log.type}">${log.type}</div>
+            <div class="console-message">${message}</div>
+            ${hasStack ? '<button class="console-toggle" onclick="toggleStack(this)">▶</button>' : ''}
+            ${hasStack ? `<div class="console-stack">${log.stack}</div>` : ''}
+        `;
+        
+        consoleContent.appendChild(entry);
     });
-});
+    
+    // Auto-scroll to bottom
+    if (autoScroll) {
+        consoleContent.scrollTop = consoleContent.scrollHeight;
+    }
+}
+
+// Toggle stack trace visibility
+function toggleStack(button) {
+    const entry = button.parentElement;
+    const isExpanded = entry.classList.contains('expanded');
+    
+    if (isExpanded) {
+        entry.classList.remove('expanded');
+        button.textContent = '▶';
+    } else {
+        entry.classList.add('expanded');
+        button.textContent = '▼';
+    }
+}
+
+// Update console statistics
+function updateConsoleStats() {
+    const counts = {
+        total: consoleLogs.length,
+        log: 0,
+        warn: 0,
+        error: 0,
+        info: 0,
+        debug: 0,
+        global_error: 0,
+        unhandled_rejection: 0
+    };
+    
+    consoleLogs.forEach(log => {
+        if (counts[log.type] !== undefined) {
+            counts[log.type]++;
+        }
+    });
+    
+    const totalLogsElement = document.getElementById('total-logs');
+    const logCountElement = document.getElementById('log-count');
+    const warnCountElement = document.getElementById('warn-count');
+    const errorCountElement = document.getElementById('error-count');
+    
+    if (totalLogsElement) totalLogsElement.textContent = counts.total;
+    if (logCountElement) logCountElement.textContent = counts.log;
+    if (warnCountElement) warnCountElement.textContent = counts.warn;
+    if (errorCountElement) errorCountElement.textContent = counts.error;
+}
+
+// Filter console based on search
+function filterConsole() {
+    renderConsoleLogs();
+}
+
+// Clear console
+function clearConsole() {
+    consoleLogs = [];
+    renderConsoleLogs();
+}
+
+// Export console logs
+function exportConsole() {
+    if (consoleLogs.length === 0) {
+        alert('No logs to export');
+        return;
+    }
+    
+    const dataStr = JSON.stringify(consoleLogs, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `console-logs-${timestamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+// Toggle auto-scroll
+function toggleAutoScroll() {
+    autoScroll = !autoScroll;
+    const button = document.querySelector('.console-control-btn[onclick*="Auto-scroll"]');
+    if (button) {
+        button.innerHTML = autoScroll ? '📜 Auto-scroll (ON)' : '📜 Auto-scroll (OFF)';
+    }
+    
+    if (autoScroll) {
+        const consoleContent = document.getElementById('console-content');
+        if (consoleContent) {
+            consoleContent.scrollTop = consoleContent.scrollHeight;
+        }
+    }
+}
+
+// Format HTML for readability
+function formatHTML(html) {
+    let formatted = '';
+    let indent = 0;
+    const tab = '  ';
+    
+    html.split(/>\s*</).forEach(element => {
+        if (element.match(/^\/\w/)) {
+            indent = Math.max(0, indent - 1);
+        }
+        
+        formatted += tab.repeat(indent) + '<' + element + '>\n';
+        
+        if (element.match(/^<?\w[^>]*[^\/]$/) && !element.startsWith('!--')) {
+            indent++;
+        }
+    });
+    
+    return formatted.trim();
+}
+
+// Update statistics
+function updateStats(data) {
+    // Quick stats
+    const quickStats = document.getElementById('quick-stats');
+    if (quickStats) {
+        quickStats.innerHTML = `
+            <div class="stat-card">
+                <h3>Page Size</h3>
+                <div class="stat-value">${(data.sizeBytes / 1024).toFixed(2)} KB</div>
+            </div>
+            <div class="stat-card">
+                <h3>Status Code</h3>
+                <div class="stat-value">${data.status}</div>
+            </div>
+            <div class="stat-card">
+                <h3>Content Type</h3>
+                <div class="stat-value">${data.contentType?.split(';')[0] || 'Unknown'}</div>
+            </div>
+            <div class="stat-card">
+                <h3>JavaScript</h3>
+                <div class="stat-value">${data.javascript?.executed ? 'Executed' : 'Not Executed'}</div>
+            </div>
+        `;
+    }
+    
+    // Page info stats
+    const pageStats = document.getElementById('page-stats');
+    if (pageStats && data.pageInfo) {
+        pageStats.innerHTML = `
+            <div class="stat-card">
+                <h3>Page Title</h3>
+                <div class="stat-value">${data.pageInfo.title || 'No title'}</div>
+            </div>
+            <div class="stat-card">
+                <h3>Scripts</h3>
+                <div class="stat-value">
+                    Total: ${data.pageInfo.scripts?.total || 0}<br>
+                    Inline: ${data.pageInfo.scripts?.inline || 0}<br>
+                    External: ${data.pageInfo.scripts?.external || 0}
+                </div>
+            </div>
+            <div class="stat-card">
+                <h3>Console References</h3>
+                <div class="stat-value">
+                    ${data.pageInfo.elementCount?.console || 0} console. calls
+                </div>
+            </div>
+        `;
+    }
+}
+
+// Tab switching
+function switchTab(tabName) {
+    if (!event || !event.target) return;
+    
+    // Update tab buttons
+    document.querySelectorAll('.tab').forEach(tab => {
+        tab.classList.remove('active');
+    });
+    event.target.classList.add('active');
+    
+    // Show selected tab content
+    document.querySelectorAll('.tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+    const tabElement = document.getElementById(`tab-${tabName}`);
+    if (tabElement) {
+        tabElement.classList.add('active');
+    }
+}
+
+// Copy source to clipboard
+async function copySource() {
+    if (!currentData) return;
+    
+    try {
+        await navigator.clipboard.writeText(currentData.source);
+        alert('Source code copied to clipboard!');
+    } catch (error) {
+        showError('Failed to copy: ' + error.message);
+    }
+}
+
+// Download source as file
+function downloadSource() {
+    if (!currentData) return;
+    
+    const url = new URL(currentData.url);
+    const filename = `${url.hostname}-${new Date().toISOString().slice(0,10)}.html`;
+    const blob = new Blob([currentData.source], { type: 'text/html' });
+    const downloadUrl = URL.createObjectURL(blob);
+    
+    const a = document.createElement('a');
+    a.href = downloadUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(downloadUrl);
+}
+
+// Toggle word wrap
+function toggleWrap() {
+    const sourceCode = document.getElementById('source-code');
+    if (!sourceCode) return;
+    
+    const pre = sourceCode.parentElement;
+    if (pre) {
+        pre.style.whiteSpace = pre.style.whiteSpace === 'pre-wrap' ? 'pre' : 'pre-wrap';
+    }
+}
+
+// Show error
+function showError(message) {
+    const errorMessageElement = document.getElementById('error-message');
+    const errorCard = document.getElementById('error-card');
+    
+    if (errorMessageElement) errorMessageElement.textContent = message;
+    if (errorCard) errorCard.style.display = 'block';
+}
