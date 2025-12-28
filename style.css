@@ -1,30 +1,197 @@
-:root{--bg:#dadada;--bar:#fff;--text:#111;--panel:#eee;--border:#dadada  ;}
-body.dark{--bg:#121212;--bar:#1e1e1e;--text:#e0e0e0;--panel:#181818;--border:#333;}
-body{margin:0;font-family:Arial,sans-serif;background:var(--bg);color:var(--text);transition:0.25s;}
-.browser-bar{display:flex;align-items:center;gap:5px;padding:5px 8px;background:var(--bar);border-bottom:1px solid var(--border);}
-.nav-buttons button,.action-buttons button{border:none;background:none;cursor:pointer;font-size:24px;color:var(--text);}
-.nav-buttons button:hover,.action-buttons button:hover{color:#000;}
-.browser-bar input{flex:1;padding:6px 10px;font-size:15px;border-radius:20px;border:1px solid var(--border);background:var(--panel);color:var(--text);}
-.tabs-container{display:flex;align-items:center;gap:2px;background:var(--panel);border-bottom:1px solid var(--border);overflow-x:auto;padding:2px;}
-.tabs{display:flex;gap:2px;flex-grow:1;overflow-x:auto;}
-.tab{padding:5px 10px;cursor:pointer;display:flex;align-items:center;gap:4px;border-radius:5px 5px 0 0;white-space:nowrap;}
-.tab.active{background:var(--bar);font-weight:bold;}
-.tab button{font-size:16px;border:none;background:none;cursor:pointer;color:var(--text);}
-.add-tab{border:none;background:none;font-size:24px;cursor:pointer;color:var(--text);}
-.main{display:flex;height:calc(100vh - 100px);}
-.sidebar{width:250px;background:var(--panel);border-right:1px solid var(--border);overflow-y:auto;padding:5px;box-sizing:border-box;transition:0.3s;}
-.sidebar.collapsed{width:40px;padding:5px;}
-.sidebar.collapsed .list{display:none;}
-.sidebar .list{transition:0.3s;}
-.sidebar-toggle{display:flex;justify-content:flex-end;margin-bottom:5px;}
-.list{margin-bottom:10px;}
-.list-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;}
-.list-header button{border:none;background:none;cursor:pointer;font-size:20px;color:var(--text);}
-.list-header button:hover{color:#f00;}
-.item{display:flex;align-items:center;gap:6px;padding:3px;cursor:pointer;border-radius:4px;}
-.item:hover{background:rgba(255,255,255,0.1);}
-.item img{width:16px;height:16px;}
-.iframe-container{flex:1;position:relative;}
-.iframe-container iframe{width:100%;height:100%;border:none;background:#000;}
-.tab-preview{position:absolute;display:none;width:300px;height:200px;border:1px solid var(--border);background:var(--panel);box-shadow:0 2px 10px rgba(0,0,0,0.4);z-index:9999;overflow:hidden;font-size:12px;color:var(--text);}
-.tab-preview iframe{width:100%;height:100%;border:none;}
+/* Add to existing CSS */
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--panel);
+}
+
+::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+/* Tab improvements */
+.tab {
+    position: relative;
+    min-width: 100px;
+    max-width: 200px;
+    overflow: hidden;
+    transition: background-color 0.2s;
+}
+
+.tab:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.tab.active::after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: #4285f4;
+}
+
+.close-tab {
+    opacity: 0;
+    transition: opacity 0.2s;
+    padding: 0 4px;
+    border-radius: 50%;
+}
+
+.tab:hover .close-tab {
+    opacity: 1;
+}
+
+.close-tab:hover {
+    background: rgba(255, 0, 0, 0.2);
+}
+
+/* Delete button styling */
+.delete-item {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text);
+    padding: 2px 4px;
+    border-radius: 3px;
+    transition: opacity 0.2s, background-color 0.2s;
+}
+
+.delete-item:hover {
+    background-color: rgba(255, 0, 0, 0.2);
+    opacity: 1 !important;
+}
+
+.delete-item:active {
+    background-color: rgba(255, 0, 0, 0.3);
+}
+
+/* Item hover effects */
+.item {
+    position: relative;
+    transition: background-color 0.2s;
+}
+
+.item:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Clear history button */
+#clearHistory {
+    transition: color 0.2s;
+}
+
+#clearHistory:hover {
+    color: #ff4444 !important;
+}
+
+/* Make sure items don't overflow */
+.item-text {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-right: 8px;
+}
+
+/* Improve list headers */
+.list-header {
+    padding: 5px 0;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 8px;
+}
+
+.list-header strong {
+    font-size: 14px;
+    color: var(--text);
+}
+
+/* URL input improvements */
+#url {
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+#url:focus {
+    border-color: #4285f4;
+    box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.2);
+}
+
+/* Responsive improvements */
+@media (max-width: 768px) {
+    .sidebar {
+        width: 200px;
+    }
+    
+    .tab {
+        min-width: 80px;
+        max-width: 150px;
+    }
+    
+    .tab span {
+        font-size: 12px;
+    }
+}
+
+@media (max-width: 480px) {
+    .browser-bar {
+        flex-wrap: wrap;
+    }
+    
+    .nav-buttons, .action-buttons {
+        order: 1;
+    }
+    
+    #url {
+        order: 2;
+        width: 100%;
+        margin-top: 5px;
+    }
+    
+    .sidebar {
+        position: absolute;
+        z-index: 1000;
+        height: 100%;
+    }
+    
+    .sidebar.collapsed {
+        transform: translateX(-100%);
+    }
+}
+
+/* Favicon styling */
+.tab img, .item img {
+    width: 16px;
+    height: 16px;
+    object-fit: contain;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.1);
+    padding: 1px;
+}
+
+.tab.active img {
+    background: rgba(66, 133, 244, 0.2);
+}
+
+/* Loading state for favicons */
+.tab img.loading {
+    opacity: 0.5;
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0% { opacity: 0.5; }
+    50% { opacity: 0.8; }
+    100% { opacity: 0.5; }
+}
