@@ -1,6 +1,4 @@
-/* Add to existing CSS */
-
-/* Scrollbar styling */
+/* ===== SCROLLBAR STYLING ===== */
 ::-webkit-scrollbar {
     width: 8px;
     height: 8px;
@@ -13,23 +11,32 @@
 ::-webkit-scrollbar-thumb {
     background: #888;
     border-radius: 4px;
+    transition: background 0.2s;
 }
 
 ::-webkit-scrollbar-thumb:hover {
     background: #555;
 }
 
-/* Tab improvements */
+/* ===== TAB STYLING ===== */
 .tab {
     position: relative;
     min-width: 100px;
     max-width: 200px;
     overflow: hidden;
     transition: background-color 0.2s;
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
 }
 
 .tab:hover {
     background: rgba(255, 255, 255, 0.1);
+}
+
+.tab.active {
+    background: rgba(66, 133, 244, 0.1);
 }
 
 .tab.active::after {
@@ -40,168 +47,48 @@
     right: 0;
     height: 2px;
     background: #4285f4;
+    animation: slideIn 0.2s ease-out;
 }
 
 .close-tab {
     opacity: 0;
-    transition: opacity 0.2s;
-    padding: 0 4px;
+    transition: all 0.2s;
+    padding: 2px 4px;
     border-radius: 50%;
+    margin-left: auto;
+    font-size: 16px;
+    line-height: 1;
 }
 
 .tab:hover .close-tab {
-    opacity: 1;
+    opacity: 0.7;
 }
 
 .close-tab:hover {
     background: rgba(255, 0, 0, 0.2);
-}
-
-/* Delete button styling */
-.delete-item {
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: var(--text);
-    padding: 2px 4px;
-    border-radius: 3px;
-    transition: opacity 0.2s, background-color 0.2s;
-}
-
-.delete-item:hover {
-    background-color: rgba(255, 0, 0, 0.2);
     opacity: 1 !important;
 }
 
-.delete-item:active {
-    background-color: rgba(255, 0, 0, 0.3);
+.close-tab:active {
+    transform: scale(0.9);
 }
 
-/* Item hover effects */
-.item {
-    position: relative;
-    transition: background-color 0.2s;
+/* ===== BUTTON STYLING ===== */
+.nav-buttons button,
+.action-buttons button,
+.add-tab {
+    transition: all 0.2s;
+    border-radius: 4px;
+    padding: 6px 8px;
+    border: none;
+    cursor: pointer;
+    background: transparent;
 }
 
-.item:hover {
-    background-color: rgba(255, 255, 255, 0.1);
-}
-
-/* Clear history button */
-#clearHistory {
-    transition: color 0.2s;
-}
-
-#clearHistory:hover {
-    color: #ff4444 !important;
-}
-
-/* Make sure items don't overflow */
-.item-text {
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    margin-right: 8px;
-}
-
-/* Improve list headers */
-.list-header {
-    padding: 5px 0;
-    border-bottom: 1px solid var(--border);
-    margin-bottom: 8px;
-}
-
-.list-header strong {
-    font-size: 14px;
-    color: var(--text);
-}
-
-/* URL input improvements */
-#url {
-    outline: none;
-    transition: border-color 0.2s;
-}
-
-#url:focus {
-    border-color: #4285f4;
-    box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.2);
-}
-
-/* Responsive improvements */
-@media (max-width: 768px) {
-    .sidebar {
-        width: 200px;
-    }
-    
-    .tab {
-        min-width: 80px;
-        max-width: 150px;
-    }
-    
-    .tab span {
-        font-size: 12px;
-    }
-}
-
-@media (max-width: 480px) {
-    .browser-bar {
-        flex-wrap: wrap;
-    }
-    
-    .nav-buttons, .action-buttons {
-        order: 1;
-    }
-    
-    #url {
-        order: 2;
-        width: 100%;
-        margin-top: 5px;
-    }
-    
-    .sidebar {
-        position: absolute;
-        z-index: 1000;
-        height: 100%;
-    }
-    
-    .sidebar.collapsed {
-        transform: translateX(-100%);
-    }
-}
-
-/* Favicon styling */
-.tab img, .item img {
-    width: 16px;
-    height: 16px;
-    object-fit: contain;
-    border-radius: 2px;
-    background: rgba(255, 255, 255, 0.1);
-    padding: 1px;
-}
-
-.tab.active img {
-    background: rgba(66, 133, 244, 0.2);
-}
-
-/* Loading state for favicons */
-.tab img.loading {
-    opacity: 0.5;
-    animation: pulse 1.5s infinite;
-}
-
-@keyframes pulse {
-    0% { opacity: 0.5; }
-    50% { opacity: 0.8; }
-    100% { opacity: 0.5; }
-}
-
-/* Button hover effects */
 .nav-buttons button:hover,
 .action-buttons button:hover,
 .add-tab:hover {
     background-color: rgba(0, 0, 0, 0.1);
-    border-radius: 4px;
 }
 
 .nav-buttons button:active,
@@ -211,42 +98,7 @@
     transform: scale(0.95);
 }
 
-/* Disabled state for buttons when no action possible */
-.nav-buttons button:disabled,
-.action-buttons button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
-.nav-buttons button:disabled:hover,
-.action-buttons button:disabled:hover {
-    background-color: transparent;
-}
-
-/* Update back/forward button states based on history */
-#back.no-history,
-#forward.no-history {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
-/* Button hover effects */
-.nav-buttons button:hover,
-.action-buttons button:hover,
-.add-tab:hover {
-    background-color: rgba(0, 0, 0, 0.1);
-    border-radius: 4px;
-}
-
-.nav-buttons button:active,
-.action-buttons button:active,
-.add-tab:active {
-    background-color: rgba(0, 0, 0, 0.2);
-    transform: scale(0.95);
-    transition: transform 0.1s;
-}
-
-/* Disabled state for buttons when no action possible */
+/* Button states */
 .nav-buttons button:disabled,
 .action-buttons button:disabled {
     opacity: 0.5;
@@ -259,7 +111,6 @@
     transform: none;
 }
 
-/* Update back/forward button states based on history */
 #back.no-history,
 #forward.no-history {
     opacity: 0.5;
@@ -272,12 +123,243 @@
     transform: none;
 }
 
-/* Loading state for reload button */
+/* ===== URL INPUT ===== */
+#url {
+    outline: none;
+    transition: all 0.2s;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    background: var(--panel);
+    width: 100%;
+}
+
+#url:focus {
+    border-color: #4285f4;
+    box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.2);
+}
+
+/* ===== ITEM STYLING ===== */
+.item {
+    position: relative;
+    transition: background-color 0.2s;
+    padding: 8px 12px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 2px 0;
+}
+
+.item:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.item-text {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-right: 8px;
+    font-size: 14px;
+}
+
+/* Delete button for items */
+.delete-item {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text);
+    padding: 4px;
+    border-radius: 3px;
+    opacity: 0;
+    transition: all 0.2s;
+    font-size: 14px;
+    line-height: 1;
+}
+
+.item:hover .delete-item {
+    opacity: 0.7;
+}
+
+.delete-item:hover {
+    background-color: rgba(255, 0, 0, 0.2);
+    opacity: 1 !important;
+}
+
+.delete-item:active {
+    background-color: rgba(255, 0, 0, 0.3);
+    transform: scale(0.95);
+}
+
+/* ===== LIST HEADERS ===== */
+.list-header {
+    padding: 12px 0 8px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+/* Clear history button */
+#clearHistory {
+    transition: all 0.2s;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+#clearHistory:hover {
+    color: #ff4444 !important;
+}
+
+/* ===== FAVICON STYLING ===== */
+.tab img,
+.item img {
+    width: 16px;
+    height: 16px;
+    object-fit: contain;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.1);
+    padding: 1px;
+    flex-shrink: 0;
+}
+
+.tab.active img {
+    background: rgba(66, 133, 244, 0.2);
+}
+
+/* Loading states */
+.tab img.loading {
+    opacity: 0.5;
+    animation: pulse 1.5s infinite;
+}
+
 #reload.loading {
     animation: spin 1s linear infinite;
+}
+
+/* ===== ANIMATIONS ===== */
+@keyframes pulse {
+    0% { opacity: 0.5; }
+    50% { opacity: 0.8; }
+    100% { opacity: 0.5; }
 }
 
 @keyframes spin {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
+}
+
+@keyframes slideIn {
+    from { transform: scaleX(0); }
+    to { transform: scaleX(1); }
+}
+
+/* ===== RESPONSIVE DESIGN ===== */
+@media (max-width: 768px) {
+    .sidebar {
+        width: 200px;
+    }
+    
+    .tab {
+        min-width: 80px;
+        max-width: 150px;
+        padding: 6px 8px;
+    }
+    
+    .tab span {
+        font-size: 12px;
+    }
+    
+    .item {
+        padding: 6px 8px;
+    }
+    
+    .item-text {
+        font-size: 12px;
+    }
+}
+
+@media (max-width: 480px) {
+    .browser-bar {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    
+    .nav-buttons,
+    .action-buttons {
+        order: 1;
+    }
+    
+    #url {
+        order: 2;
+        width: 100%;
+        margin-top: 0;
+    }
+    
+    .sidebar {
+        position: absolute;
+        z-index: 1000;
+        height: 100%;
+        width: 250px;
+        transition: transform 0.3s;
+    }
+    
+    .sidebar.collapsed {
+        transform: translateX(-100%);
+    }
+    
+    /* Adjust button sizes for mobile */
+    .nav-buttons button,
+    .action-buttons button {
+        padding: 8px;
+    }
+    
+    .close-tab {
+        opacity: 1;
+        font-size: 14px;
+    }
+    
+    .delete-item {
+        opacity: 0.7;
+        font-size: 12px;
+    }
+}
+
+/* Touch device optimizations */
+@media (hover: none) and (pointer: coarse) {
+    .close-tab,
+    .delete-item {
+        opacity: 0.7;
+        padding: 8px;
+    }
+    
+    .tab,
+    .item {
+        padding: 12px;
+    }
+    
+    /* Larger tap targets */
+    .nav-buttons button,
+    .action-buttons button {
+        min-height: 44px;
+        min-width: 44px;
+    }
+}
+
+/* Print styles */
+@media print {
+    .sidebar,
+    .browser-bar,
+    .delete-item,
+    .close-tab {
+        display: none !important;
+    }
 }
