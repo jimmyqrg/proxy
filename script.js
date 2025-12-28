@@ -7,6 +7,14 @@ let activeTab = null;
 // Track if we're initializing dark mode from device
 let isInitialDarkModeLoad = true;
 
+// Tab cloak state
+let isTabCloaked = false;
+const cloakIcon = "https://student.jimmyqrg.com/cloak-images/pausd.png";
+const cloakTitle = "My Apps";
+const originalFaviconLight = "/favicon-light.png";
+const originalFaviconDark = "/favicon-dark.png";
+const originalTitle = "HackWize";
+
 // ---------- Tab Management Functions (for iframe communication) ----------
 window.browserTabs = {
     open: function(url) {
