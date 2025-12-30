@@ -658,3 +658,11 @@
       height: 100vh;
     }
   }
+
+  #lisence-link {
+    color: #333333;
+  }
+
+  #lisence-link.dark {
+    color: #e0e0e0
+  }
