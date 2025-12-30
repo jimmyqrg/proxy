@@ -94,6 +94,7 @@
   
   /* ===== URL INPUT ===== */
   #url {
+    font-family: 'Oxanium', sans-serif;
     flex: 1;
     padding: 8px 16px;
     font-size: 14px;
