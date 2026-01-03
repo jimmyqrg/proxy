@@ -13,7 +13,6 @@ window.browserTabs = {
         newTab(url);
         return {
             close: function() {
-                // Find and close the tab
                 const tab = tabs.find(t => t.url === url);
                 if (tab) closeTab(tab.id);
             }
@@ -45,12 +44,10 @@ const favicon = async (url) => {
     try {
         const domain = new URL(url).hostname;
         
-        // Check cache first
         if (faviconCache.has(domain)) {
             return faviconCache.get(domain);
         }
         
-        // Try to fetch favicon directly from the site
         const faviconUrls = [
             `https://${domain}/favicon.ico`,
             `https://${domain}/favicon.png`,
@@ -59,7 +56,6 @@ const favicon = async (url) => {
             `https://icons.duckduckgo.com/ip3/${domain}.ico`
         ];
         
-        // Try each favicon source
         for (const favUrl of faviconUrls) {
             try {
                 const response = await fetch(favUrl, { 
@@ -73,11 +69,9 @@ const favicon = async (url) => {
                 }
             } catch (e) {
                 // Continue to next URL
-                console.log(`Failed to fetch favicon from ${favUrl}:`, e.message);
             }
         }
         
-        // If no favicon found, use default
         faviconCache.set(domain, defaultFavicon);
         return defaultFavicon;
     } catch {
@@ -88,14 +82,11 @@ const favicon = async (url) => {
 // ---------- Dark Mode ----------
 const themeBtn = document.getElementById("theme");
 
-// Check device preference
 function getSystemTheme() {
     return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
 }
 
-// Set theme with device preference consideration
 const setTheme = (dark) => {
-    // If this is initial load and no theme is saved, use system preference
     if (isInitialDarkModeLoad && localStorage.getItem("darkMode") === null) {
         dark = getSystemTheme();
     }
@@ -106,25 +97,20 @@ const setTheme = (dark) => {
     isInitialDarkModeLoad = false;
 };
 
-// Initialize theme
 const savedTheme = localStorage.getItem("darkMode");
 if (savedTheme !== null) {
     setTheme(savedTheme === "1");
 } else {
-    // Use system preference
     setTheme(getSystemTheme());
 }
 
-// Toggle theme on button click
 themeBtn.onclick = () => {
     setTheme(!document.body.classList.contains("dark"));
 };
 
-// Listen for system theme changes
 if (window.matchMedia) {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     mediaQuery.addEventListener('change', (e) => {
-        // Only auto-change if user hasn't manually set a preference
         if (localStorage.getItem("darkMode") === null) {
             setTheme(e.matches);
         }
@@ -145,12 +131,10 @@ async function renderTabs() {
         tabEl.className = "tab" + (t === activeTab ? " active" : "");
         tabEl.dataset.id = t.id;
         
-        // Use shorter title for display
         const displayTitle = t.title && t.title.length > 20 
             ? t.title.substring(0, 20) + "..." 
             : t.title || new URL(t.url).hostname || "New Tab";
         
-        // Get favicon (async)
         const faviconUrl = await favicon(t.url);
         
         tabEl.innerHTML = `
@@ -170,7 +154,6 @@ async function renderTabs() {
             closeTab(t.id);
         };
         
-        // Tab hover preview with delay
         tabEl.onmouseenter = e => {
             clearTimeout(previewTimeout);
             previewTimeout = setTimeout(() => {
@@ -258,7 +241,6 @@ function newTab(url = "https://proxy.jimmyqrg.com/default/") {
   const id = Date.now();
   const iframe = document.createElement("iframe");
   
-  // Set up iframe
   iframe.src = proxy + encodeURIComponent(url);
   iframe.style.display = "none";
   iframe.dataset.id = id;
@@ -266,14 +248,12 @@ function newTab(url = "https://proxy.jimmyqrg.com/default/") {
   
   iframe.onload = () => {
       try {
-          // Inject communication script into iframe
           const script = document.createElement('script');
           script.textContent = `
               // Override window.open to open in our browser
               const originalOpen = window.open;
               window.open = function(url, target, features) {
                   if (url && typeof url === 'string') {
-                      // Send message to parent window
                       window.parent.postMessage({
                           type: 'NEW_TAB',
                           url: url
@@ -320,24 +300,77 @@ function newTab(url = "https://proxy.jimmyqrg.com/default/") {
                       }
                   }
               });
+              
+              // Update parent when title changes
+              let lastTitle = document.title;
+              const observer = new MutationObserver(function(mutations) {
+                mutations.forEach(function(mutation) {
+                  if (mutation.target === document.querySelector('title')) {
+                    if (document.title !== lastTitle) {
+                      lastTitle = document.title;
+                      window.parent.postMessage({
+                        type: 'UPDATE_TITLE',
+                        title: document.title,
+                        url: window.location.href
+                      }, '*');
+                    }
+                  }
+                });
+              });
+              
+              // Observe title element
+              const titleElement = document.querySelector('title');
+              if (titleElement) {
+                observer.observe(titleElement, { subtree: true, characterData: true, childList: true });
+              }
+              
+              // Also watch for dynamic title changes
+              const originalTitle = Object.getOwnPropertyDescriptor(Document.prototype, 'title');
+              Object.defineProperty(document, 'title', {
+                get: originalTitle.get,
+                set: function(value) {
+                  originalTitle.set.call(this, value);
+                  window.parent.postMessage({
+                    type: 'UPDATE_TITLE',
+                    title: value,
+                    url: window.location.href
+                  }, '*');
+                }
+              });
+              
+              // Send initial title
+              if (document.title) {
+                window.parent.postMessage({
+                  type: 'UPDATE_TITLE',
+                  title: document.title,
+                  url: window.location.href
+                }, '*');
+              }
           `;
           
-          // Try to inject script
           try {
               iframe.contentDocument.head.appendChild(script);
           } catch (e) {
               // Cross-origin restrictions may prevent injection
-              console.log("Cannot inject script due to cross-origin restrictions");
           }
           
-          const title = iframe.contentDocument?.title;
-          if (title && title.trim()) {
-              activeTab.title = title;
-          } else {
-              activeTab.title = new URL(activeTab.url).hostname;
+          // Try to get title from iframe
+          try {
+              const title = iframe.contentDocument?.title;
+              if (title && title.trim()) {
+                  activeTab.title = title;
+                  document.title = "HackWize - " + (title.length > 30 ? title.substring(0, 30) + "..." : title);
+              } else {
+                  activeTab.title = new URL(activeTab.url).hostname;
+                  document.title = "HackWize";
+              }
+          } catch (e) {
+              activeTab.title = new URL(activeTab.url).hostname || "New Tab";
+              document.title = "HackWize";
           }
       } catch (e) {
           activeTab.title = new URL(activeTab.url).hostname || "New Tab";
+          document.title = "HackWize";
       }
       renderTabs();
   };
@@ -345,6 +378,7 @@ function newTab(url = "https://proxy.jimmyqrg.com/default/") {
   iframe.onerror = () => {
       console.error("Failed to load:", url);
       activeTab.title = "Error loading page";
+      document.title = "HackWize - Error";
       renderTabs();
   };
   
@@ -362,66 +396,112 @@ function newTab(url = "https://proxy.jimmyqrg.com/default/") {
   return tab;
 }
 
+function switchTab(id) {
+  tabs.forEach(t => {
+    if (t.iframe) {
+      t.iframe.style.display = "none";
+    }
+  });
+  
+  activeTab = tabs.find(t => t.id === id);
+  
+  if (activeTab && activeTab.iframe) {
+    activeTab.iframe.style.display = "block";
+    document.getElementById("url").value = activeTab.url;
+    renderTabs();
+    updateBookmarkButton();
+    updateNavButtonStates();
+    
+    // Update browser title
+    if (activeTab.title && activeTab.title !== "Loading..." && activeTab.title !== "Error loading page") {
+      document.title = "HackWize - " + (activeTab.title.length > 30 ? activeTab.title.substring(0, 30) + "..." : activeTab.title);
+    } else {
+      document.title = "HackWize";
+    }
+    
+    try {
+      const iframeUrl = activeTab.iframe.contentWindow.location.href;
+      if (iframeUrl && iframeUrl !== 'about:blank' && iframeUrl !== activeTab.url) {
+        activeTab.url = iframeUrl;
+        document.getElementById("url").value = iframeUrl;
+      }
+    } catch (e) {
+      // Cross-origin restriction, use stored URL
+    }
+  }
+}
+
 function closeTab(id) {
   const idx = tabs.findIndex(t => t.id === id);
   if (idx === -1) return;
   
-  // Remove iframe from DOM
+  const wasActive = activeTab?.id === id;
+  
   if (tabs[idx].iframe && tabs[idx].iframe.parentNode) {
     tabs[idx].iframe.parentNode.removeChild(tabs[idx].iframe);
   }
   
   tabs.splice(idx, 1);
   
-  if (activeTab?.id === id) {
-    // Switch to nearest tab
+  if (wasActive) {
     const newIndex = Math.max(0, idx - 1);
     if (tabs[newIndex]) {
       switchTab(tabs[newIndex].id);
     } else {
-      // No tabs left, create new one
       newTab();
+      document.title = "HackWize";
     }
   }
   
   renderTabs();
-  updateNavButtonStates(); // Add this line
+  updateNavButtonStates();
 }
 
 // ---------- Message Listener for iframe communication ----------
 window.addEventListener('message', function(event) {
-  // Security check - accept messages from our own origin only
-  if (event.origin !== window.location.origin && !event.data.type) return;
+  // Accept messages from any origin (since iframes are proxied)
+  if (!event.data.type) return;
   
   switch(event.data.type) {
-      case 'NEW_TAB':
-          if (event.data.url) {
-              newTab(event.data.url);
+    case 'NEW_TAB':
+      if (event.data.url) {
+        newTab(event.data.url);
+      }
+      break;
+      
+    case 'CLOSE_TAB':
+      if (event.data.url) {
+        const tab = tabs.find(t => t.url === event.data.url);
+        if (tab) closeTab(tab.id);
+      }
+      break;
+      
+    case 'CLOSE_CURRENT_TAB':
+      if (tabs.length > 1) {
+        closeTab(activeTab.id);
+      }
+      break;
+      
+    case 'UPDATE_TITLE':
+      if (event.data.title && event.data.url) {
+        const tab = tabs.find(t => t.url === event.data.url);
+        if (tab) {
+          tab.title = event.data.title;
+          if (tab === activeTab) {
+            document.title = "HackWize - " + (event.data.title.length > 30 ? event.data.title.substring(0, 30) + "..." : event.data.title);
           }
-          break;
-          
-      case 'CLOSE_TAB':
-          if (event.data.url) {
-              const tab = tabs.find(t => t.url === event.data.url);
-              if (tab) closeTab(tab.id);
-          }
-          break;
-          
-      case 'CLOSE_CURRENT_TAB':
-          if (tabs.length > 1) {
-              closeTab(activeTab.id);
-          }
-          break;
+          renderTabs();
+        }
+      }
+      break;
   }
 });
 
 // ---------- History & Bookmarks ----------
 function saveHistory(url) {
-    // Don't save proxy URLs or duplicates
     if (url.includes(proxy) || history[history.length - 1] === url) return;
     
     history.push(url);
-    // Keep only last 100 history items
     if (history.length > 100) {
         history = history.slice(-100);
     }
@@ -433,7 +513,6 @@ async function renderHistory() {
     const h = document.getElementById("history");
     h.innerHTML = "";
     
-    // Show most recent first
     const reversedHistory = history.slice().reverse();
     
     for (let i = 0; i < reversedHistory.length; i++) {
@@ -452,21 +531,18 @@ async function renderHistory() {
             </button>
         `;
         
-        // Navigate on click
         d.onclick = (e) => {
             if (!e.target.closest('.delete-item')) {
                 navigate(u);
             }
         };
         
-        // Delete button functionality
         const deleteBtn = d.querySelector('.delete-item');
         deleteBtn.onclick = (e) => {
             e.stopPropagation();
             deleteHistoryItem(i);
         };
         
-        // Show delete button on hover
         d.onmouseenter = () => {
             deleteBtn.style.opacity = '0.75';
         };
@@ -479,9 +555,7 @@ async function renderHistory() {
     }
 }
 
-// Delete single history item
 function deleteHistoryItem(reversedIndex) {
-    // Convert reversed index back to original index
     const originalIndex = history.length - 1 - reversedIndex;
     if (originalIndex >= 0 && originalIndex < history.length) {
         history.splice(originalIndex, 1);
@@ -510,21 +584,18 @@ async function renderBookmarks() {
             </button>
         `;
         
-        // Navigate on click
         d.onclick = (e) => {
             if (!e.target.closest('.delete-item')) {
                 navigate(u);
             }
         };
         
-        // Delete button functionality
         const deleteBtn = d.querySelector('.delete-item');
         deleteBtn.onclick = (e) => {
             e.stopPropagation();
             deleteBookmarkItem(i);
         };
         
-        // Show delete button on hover
         d.onmouseenter = () => {
             deleteBtn.style.opacity = '0.75';
         };
@@ -537,7 +608,6 @@ async function renderBookmarks() {
     }
 }
 
-// Delete single bookmark
 function deleteBookmarkItem(index) {
     if (index >= 0 && index < bookmarks.length) {
         bookmarks.splice(index, 1);
@@ -547,23 +617,19 @@ function deleteBookmarkItem(index) {
     }
 }
 
-function addBookmark(url) {
-  if (!url || bookmarks.includes(url)) return;
+function toggleBookmark(url) {
+  if (!url) return;
   
-  bookmarks.push(url);
-  localStorage.setItem("browserBookmarks", JSON.stringify(bookmarks));
-  renderBookmarks();
-  updateBookmarkButton();
-}
-
-function removeBookmark(url) {
   const index = bookmarks.indexOf(url);
   if (index > -1) {
     bookmarks.splice(index, 1);
-    localStorage.setItem("browserBookmarks", JSON.stringify(bookmarks));
-    renderBookmarks();
-    updateBookmarkButton();
+  } else {
+    bookmarks.push(url);
   }
+  
+  localStorage.setItem("browserBookmarks", JSON.stringify(bookmarks));
+  renderBookmarks();
+  updateBookmarkButton();
 }
 
 // ---------- Clear History ----------
@@ -592,16 +658,13 @@ toggleBtn.onclick = () => {
 function navigate(url) {
   if (!url || typeof url !== 'string') return;
   
-  // Add https:// if no protocol specified
   if (!url.startsWith("http://") && !url.startsWith("https://")) {
     url = "https://" + url;
   }
   
   try {
-    // Validate URL
     new URL(url);
   } catch {
-    // If invalid, try search
     url = `https://www.google.com/search?q=${encodeURIComponent(url)}`;
   }
   
@@ -610,6 +673,7 @@ function navigate(url) {
   } else {
     activeTab.url = url;
     activeTab.title = "Loading...";
+    document.title = "HackWize";
     activeTab.iframe.src = proxy + encodeURIComponent(url);
     document.getElementById("url").value = url;
     saveHistory(url);
@@ -629,7 +693,6 @@ document.getElementById("back").onclick = () => {
   if (activeTab?.iframe?.contentWindow) {
     try {
       activeTab.iframe.contentWindow.history.back();
-      // Update URL after navigation
       setTimeout(() => {
         try {
           const iframeUrl = activeTab.iframe.contentWindow.location.href;
@@ -652,7 +715,6 @@ document.getElementById("forward").onclick = () => {
   if (activeTab?.iframe?.contentWindow) {
     try {
       activeTab.iframe.contentWindow.history.forward();
-      // Update URL after navigation
       setTimeout(() => {
         try {
           const iframeUrl = activeTab.iframe.contentWindow.location.href;
@@ -673,12 +735,18 @@ document.getElementById("forward").onclick = () => {
 
 document.getElementById("reload").onclick = () => {
   if (activeTab) {
+    const reloadBtn = document.getElementById("reload");
+    reloadBtn.classList.add('loading');
+    
     try {
       activeTab.iframe.contentWindow.location.reload();
     } catch (e) {
-      // Fallback to iframe src reload
       activeTab.iframe.src = activeTab.iframe.src;
     }
+    
+    setTimeout(() => {
+      reloadBtn.classList.remove('loading');
+    }, 1000);
   }
 };
 
@@ -688,80 +756,27 @@ document.getElementById("home").onclick = () => {
 
 document.getElementById("bookmark").onclick = () => {
   if (activeTab && activeTab.url) {
-      addBookmark(activeTab.url);
+    toggleBookmark(activeTab.url);
   }
 };
 
 // URL input handling
 document.getElementById("url").addEventListener("keydown", e => {
   if (e.key === "Enter") {
-      navigate(e.target.value.trim());
+    navigate(e.target.value.trim());
   }
 });
 
-// Update URL when iframe navigates
-function setupIframeNavigationListener(iframe) {
-  // This is tricky due to same-origin policy
-  // We'll update URL on tab switch as a workaround
-}
-
-// Update URL when tab is switched
-function switchTab(id) {
-  tabs.forEach(t => {
-    if (t.iframe) {
-      t.iframe.style.display = "none";
-    }
-  });
-  
-  activeTab = tabs.find(t => t.id === id);
-  
-  if (activeTab && activeTab.iframe) {
-    activeTab.iframe.style.display = "block";
-    document.getElementById("url").value = activeTab.url;
-    renderTabs();
-    updateBookmarkButton();
-    updateNavButtonStates();
-    
-    try {
-      const iframeUrl = activeTab.iframe.contentWindow.location.href;
-      if (iframeUrl && iframeUrl !== 'about:blank' && iframeUrl !== activeTab.url) {
-        activeTab.url = iframeUrl;
-        document.getElementById("url").value = iframeUrl;
-      }
-    } catch (e) {
-      // Cross-origin restriction, use stored URL
-    }
-  }
-  
-  activeTab = tabs.find(t => t.id === id);
-  
-  if (activeTab && activeTab.iframe) {
-    activeTab.iframe.style.display = "block";
-    document.getElementById("url").value = activeTab.url;
-    renderTabs();
-    updateBookmarkButton();
-    
-    // Try to get current URL from iframe (works for same-origin)
-    try {
-      const iframeUrl = activeTab.iframe.contentWindow.location.href;
-      if (iframeUrl && iframeUrl !== 'about:blank' && iframeUrl !== activeTab.url) {
-        activeTab.url = iframeUrl;
-        document.getElementById("url").value = iframeUrl;
-        }
-    } catch (e) {
-      // Cross-origin restriction, use stored URL
-    }
-  }
-}
-
 // Update bookmark button state
 function updateBookmarkButton() {
-    const bookmarkBtn = document.getElementById("bookmark");
-    if (activeTab && bookmarks.includes(activeTab.url)) {
-      bookmarkBtn.innerHTML = `<span class="material-icons" style="color: gold;">star</span>`;
-    } else {
-      bookmarkBtn.innerHTML = `<span class="material-icons">star_border</span>`;
-    }
+  const bookmarkBtn = document.getElementById("bookmark");
+  if (activeTab && bookmarks.includes(activeTab.url)) {
+    bookmarkBtn.innerHTML = `<span class="material-icons" style="color: gold;">star</span>`;
+    bookmarkBtn.title = "Remove bookmark";
+  } else {
+    bookmarkBtn.innerHTML = `<span class="material-icons">star_border</span>`;
+    bookmarkBtn.title = "Add bookmark";
+  }
 }
 
 // ---------- Update Navigation Button States ----------
@@ -770,30 +785,27 @@ function updateNavButtonStates() {
   const forwardBtn = document.getElementById("forward");
   
   if (activeTab?.iframe?.contentWindow) {
-      try {
-        // Try to check history length (may fail due to cross-origin)
-        backBtn.disabled = activeTab.iframe.contentWindow.history.length <= 1;
-        forwardBtn.disabled = true; // Hard to check forward state
-        
-        // Add/remove classes for visual feedback
-        if (backBtn.disabled) {
-          backBtn.classList.add('no-history');
-        } else {
-          backBtn.classList.remove('no-history');
-        }
-        
-        if (forwardBtn.disabled) {
-          forwardBtn.classList.add('no-history');
-        } else {
-          forwardBtn.classList.remove('no-history');
-        }
-      } catch (e) {
-        // Cross-origin restriction, use generic states
-        backBtn.disabled = false;
-        forwardBtn.disabled = false;
+    try {
+      backBtn.disabled = activeTab.iframe.contentWindow.history.length <= 1;
+      forwardBtn.disabled = true;
+      
+      if (backBtn.disabled) {
+        backBtn.classList.add('no-history');
+      } else {
         backBtn.classList.remove('no-history');
+      }
+      
+      if (forwardBtn.disabled) {
+        forwardBtn.classList.add('no-history');
+      } else {
         forwardBtn.classList.remove('no-history');
       }
+    } catch (e) {
+      backBtn.disabled = false;
+      forwardBtn.disabled = false;
+      backBtn.classList.remove('no-history');
+      forwardBtn.classList.remove('no-history');
+    }
   } else {
     backBtn.disabled = true;
     forwardBtn.disabled = true;
@@ -802,29 +814,8 @@ function updateNavButtonStates() {
   }
 }
 
-// Update button states periodically and on tab switch
+// Update button states periodically
 setInterval(updateNavButtonStates, 1000);
-
-document.getElementById("reload").onclick = () => {
-  if (activeTab) {
-    const reloadBtn = document.getElementById("reload");
-    
-    // Add loading animation
-    reloadBtn.classList.add('loading');
-    
-    try {
-        activeTab.iframe.contentWindow.location.reload();
-    } catch (e) {
-        // Fallback to iframe src reload
-        activeTab.iframe.src = activeTab.iframe.src;
-    }
-    
-    // Remove loading animation after 1 second
-    setTimeout(() => {
-        reloadBtn.classList.remove('loading');
-    }, 1000);
-  }
-};
 
 // ---------- Init ----------
 document.addEventListener('DOMContentLoaded', () => {
@@ -832,17 +823,14 @@ document.addEventListener('DOMContentLoaded', () => {
   renderBookmarks();
   newTab();
   
-  // Initial button state update
   updateNavButtonStates();
   
-  // Also update button states when iframe loads
   const observer = new MutationObserver(() => {
-      updateNavButtonStates();
+    updateNavButtonStates();
   });
   
-  // Watch for iframe changes
   observer.observe(document.getElementById("iframes"), {
-      childList: true,
-      subtree: true
+    childList: true,
+    subtree: true
   });
 });
