@@ -272,7 +272,7 @@ function attachDragEvents() {
 }
 
 // ---------- Tab Management ----------
-function newTab(url = "https://proxy.jimmyqrg.com/default/") {
+function newTab(url = "https://proxy.schooloqy.com/default/") {
     const id = Date.now();
     const iframe = document.createElement("iframe");
     
@@ -815,7 +815,7 @@ document.getElementById("reload").onclick = () => {
 };
 
 document.getElementById("home").onclick = () => {
-    navigate("https://proxy.jimmyqrg.com/default/");
+    navigate("https://proxy.schooloqy.com/default/");
 };
 
 document.getElementById("bookmark").onclick = () => {
