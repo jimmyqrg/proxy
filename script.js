@@ -1,4 +1,4 @@
-const proxy = "https://proxy.ikunbeautiful.workers.dev/?url=";
+const proxy = "https://proxy.ikunbeautiful.workers.dev/?embedded=1&url=";
 const tabs = [];
 let history = JSON.parse(localStorage.getItem("browserHistory") || "[]");
 let bookmarks = JSON.parse(localStorage.getItem("browserBookmarks") || "[]");
@@ -528,6 +528,7 @@ window.addEventListener('message', function(event) {
     
     switch(event.data.type) {
         case 'NEW_TAB':
+        case 'PROXY_NEW_TAB':
             if (event.data.url) {
                 newTab(event.data.url);
             }
@@ -541,18 +542,52 @@ window.addEventListener('message', function(event) {
             break;
             
         case 'CLOSE_CURRENT_TAB':
-            if (tabs.length > 1) {
+        case 'PROXY_CLOSE_TAB':
+            if (tabs.length > 1 && activeTab) {
                 closeTab(activeTab.id);
             }
             break;
             
         case 'UPDATE_TITLE':
-            if (event.data.title && event.data.url) {
-                const tab = tabs.find(t => t.url === event.data.url);
+            if (event.data.title) {
+                // Try to match by URL first
+                let tab = null;
+                if (event.data.url) {
+                    tab = tabs.find(t => t.url === event.data.url);
+                }
+                // If no match, try to find the iframe that sent the message
+                if (!tab && event.source) {
+                    tab = tabs.find(t => t.iframe && t.iframe.contentWindow === event.source);
+                }
+                // Fallback to active tab
+                if (!tab) {
+                    tab = activeTab;
+                }
+                
                 if (tab) {
                     tab.title = event.data.title;
                     if (tab === activeTab) {
                         updateBrowserTitle();
+                    }
+                    renderTabs();
+                }
+            }
+            break;
+            
+        case 'PROXY_URL_CHANGED':
+            // Update the tab's actual URL when it changes inside the proxy
+            if (event.data.url && event.source) {
+                const tab = tabs.find(t => t.iframe && t.iframe.contentWindow === event.source);
+                if (tab) {
+                    tab.url = event.data.url;
+                    if (event.data.title) {
+                        tab.title = event.data.title;
+                    }
+                    if (tab === activeTab) {
+                        document.getElementById("url").value = event.data.url;
+                        updateBrowserTitle();
+                        updateBookmarkButton();
+                        saveHistory(event.data.url);
                     }
                     renderTabs();
                 }
@@ -816,6 +851,14 @@ document.getElementById("reload").onclick = () => {
 
 document.getElementById("home").onclick = () => {
     navigate("https://jimmyqrg.github.io/proxy/default/");
+};
+
+document.getElementById("open").onclick = () => {
+    if (activeTab && activeTab.url) {
+        // Open the current URL directly in the proxy in a new browser tab
+        const proxyUrl = proxy + encodeURIComponent(activeTab.url);
+        window.open(proxyUrl, '_blank');
+    }
 };
 
 document.getElementById("bookmark").onclick = () => {
