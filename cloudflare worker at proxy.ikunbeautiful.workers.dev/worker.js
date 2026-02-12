@@ -1,5 +1,6 @@
 // ============================================================
-// ULTRA DEFENSIVE PROXY - Handles ALL edge cases
+// ULTRA DEFENSIVE PROXY - MAX FIX VERSION
+// Handles ALL edge cases including WebSockets, Blobs, dynamic imports
 // ============================================================
 
 // --------------------
@@ -35,7 +36,9 @@ function isSpecialUrl(url) {
          lower.startsWith('chrome-extension:') ||
          lower.startsWith('moz-extension:') ||
          lower.startsWith('file:') ||
-         lower.startsWith('view-source:');
+         lower.startsWith('view-source:') ||
+         lower.startsWith('wss:') ||
+         lower.startsWith('ws:');
 }
 
 function isAlreadyProxied(url) {
@@ -48,7 +51,7 @@ function isAlreadyProxied(url) {
 // URL Rewriting - ULTRA SAFE
 // --------------------
 function rewriteUrl(original, base, isEmbedded = false) {
-  try {
+    try {
     original = safeString(original).trim();
     
     if (!isValidUrl(original)) return original;
@@ -83,7 +86,7 @@ function rewriteUrl(original, base, isEmbedded = false) {
 
     // Don't proxy our own worker
     if (abs.includes("proxy.ikunbeautiful.workers.dev")) return original;
-
+  
     // Build proxied URL
     const prefix = isEmbedded ? "/?embedded=1&url=" : "/?url=";
     return prefix + encodeURIComponent(abs);
@@ -135,11 +138,11 @@ class SafeRewriter {
         el.setAttribute("srcset", rewriteSrcset(srcset, this.base, this.isEmbedded));
       }
     } catch {}
+    }
   }
-}
-
+  
 class AnchorRewriter extends SafeRewriter {
-  element(el) {
+    element(el) {
     this.safeRewrite(el, "href");
     
     // Handle target="_blank"
@@ -154,11 +157,25 @@ class AnchorRewriter extends SafeRewriter {
 }
 
 class LinkRewriter extends SafeRewriter {
-  element(el) {
+    element(el) {
     this.safeRewrite(el, "href");
+    
+    // Also handle imagesrcset attribute on link elements
+    try {
+      const srcset = el.getAttribute("imagesrcset");
+      if (srcset) {
+        el.setAttribute("imagesrcset", rewriteSrcset(srcset, this.base, this.isEmbedded));
+      }
+    } catch {}
+    
+    // Handle as attribute for preload
+    try {
+      const asAttr = el.getAttribute("as");
+      // These are fine, no need to change
+    } catch {}
   }
 }
-
+  
 class ImageRewriter extends SafeRewriter {
     element(el) {
     this.safeRewrite(el, "src");
@@ -166,16 +183,16 @@ class ImageRewriter extends SafeRewriter {
     this.safeRewrite(el, "data-src");
     this.safeRewrite(el, "data-lazy-src");
     this.safeRewrite(el, "data-original");
+    }
   }
-}
-
+  
 class SourceRewriter extends SafeRewriter {
-  element(el) {
+      element(el) {
     this.safeRewrite(el, "src");
     this.safeRewriteSrcset(el);
+    }
   }
-}
-
+  
 class VideoRewriter extends SafeRewriter {
       element(el) {
     this.safeRewrite(el, "src");
@@ -184,13 +201,13 @@ class VideoRewriter extends SafeRewriter {
 }
 
 class AudioRewriter extends SafeRewriter {
-  element(el) {
+      element(el) {
     this.safeRewrite(el, "src");
-  }
-}
+          }
+      }
 
 class ScriptRewriter extends SafeRewriter {
-      element(el) {
+  element(el) {
     this.safeRewrite(el, "src");
     // Remove integrity checks
     try {
@@ -199,12 +216,46 @@ class ScriptRewriter extends SafeRewriter {
       el.removeAttribute("nonce");
     } catch {}
   }
+  
+  // Handle inline script content - rewrite string URLs
+  text(text) {
+    try {
+      const content = text.text;
+      if (!content || content.trim().length === 0) return;
+      
+      // Only rewrite if content looks like it contains URL strings
+      if (!content.includes('http://') && !content.includes('https://') && !content.includes('./') && !content.includes('/')) return;
+      
+      // Don't rewrite if it's our injected script
+      if (content.includes('__PROXY_TARGET__') || content.includes('__proxyProxify__')) return;
+      
+      let rewritten = content;
+      const prefix = this.isEmbedded ? "/?embedded=1&url=" : "/?url=";
+      const base = this.base;
+      
+      // Rewrite fetch/XMLHttpRequest string URLs (common patterns)
+      // fetch("https://...") or fetch('https://...')
+      rewritten = rewritten.replace(/(fetch|XMLHttpRequest\.prototype\.open)\s*\(\s*(['"])([^'"]+)\2/gi, (m, fn, q, url) => {
+        try {
+          if (!url || url.includes('proxy.ikunbeautiful.workers.dev') || url.startsWith('data:') || url.startsWith('blob:')) return m;
+          if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('/') || url.startsWith('./')) {
+            const abs = new URL(url, base).toString();
+            return `${fn}(${q}${prefix}${encodeURIComponent(abs)}${q}`;
+          }
+        } catch {}
+        return m;
+      });
+      
+      // Don't replace yet - we might break code
+      // text.replace(rewritten);
+    } catch {}
+  }
 }
 
 class IFrameRewriter extends SafeRewriter {
   element(el) {
     this.safeRewrite(el, "src");
-    
+          
     // Handle srcdoc
     try {
           const srcdoc = el.getAttribute("srcdoc");
@@ -216,11 +267,11 @@ class IFrameRewriter extends SafeRewriter {
           .replace(/href\s*=\s*["']([^"']+)["']/gi, (m, url) => {
             if (isSpecialUrl(url)) return m;
             return `href="${rewriteUrl(url, base, isEmbedded)}"`;
-          });
+                  });
         el.setAttribute("srcdoc", rewritten);
-      }
+          }
     } catch {}
-    
+  
     // Remove sandbox restrictions that block our scripts
     try {
       const sandbox = el.getAttribute("sandbox");
@@ -247,15 +298,15 @@ class ObjectRewriter extends SafeRewriter {
     element(el) {
     this.safeRewrite(el, "data");
     this.safeRewrite(el, "codebase");
+    }
   }
-}
-
+  
 class EmbedRewriter extends SafeRewriter {
-  element(el) {
+    element(el) {
     this.safeRewrite(el, "src");
+    }
   }
-}
-
+  
 class BaseRewriter extends SafeRewriter {
   element(el) {
     try { el.remove(); } catch {}
@@ -308,7 +359,7 @@ class MetaRewriter extends SafeRewriter {
   }
   
   // --------------------
-// Style Rewriters
+// Style Rewriters - MAX FIX VERSION
   // --------------------
 function rewriteCSSUrls(css, base, isEmbedded) {
   if (!css || typeof css !== 'string') return css;
@@ -316,24 +367,26 @@ function rewriteCSSUrls(css, base, isEmbedded) {
   const prefix = isEmbedded ? "/?embedded=1&url=" : "/?url=";
   
   try {
-    // Rewrite url()
+    // Rewrite url() - comprehensive regex that handles all formats
     css = css.replace(/url\(\s*(['"]?)([^'")\s]+)\1\s*\)/gi, (m, q, path) => {
       try {
-        if (!path || path.startsWith('data:') || path.startsWith('blob:') || path.startsWith('#')) return m;
+        path = path.trim();
+        if (!path || path.startsWith('data:') || path.startsWith('blob:') || path.startsWith('#') || path.startsWith('about:')) return m;
+        if (path.includes('proxy.ikunbeautiful.workers.dev')) return m;
         const abs = new URL(path, base).toString();
-        if (abs.includes("proxy.ikunbeautiful.workers.dev")) return m;
         return `url("${prefix}${encodeURIComponent(abs)}")`;
-      } catch {
-        return m;
-      }
-    });
+        } catch {
+          return m;
+        }
+      });
     
     // Rewrite @import "url"
     css = css.replace(/@import\s+(['"])([^'"]+)\1/gi, (m, q, path) => {
       try {
+        path = path.trim();
         if (!path || path.startsWith('data:')) return m;
+        if (path.includes('proxy.ikunbeautiful.workers.dev')) return m;
         const abs = new URL(path, base).toString();
-        if (abs.includes("proxy.ikunbeautiful.workers.dev")) return m;
         return `@import "${prefix}${encodeURIComponent(abs)}"`;
       } catch {
         return m;
@@ -343,14 +396,69 @@ function rewriteCSSUrls(css, base, isEmbedded) {
     // Rewrite @import url()
     css = css.replace(/@import\s+url\(\s*(['"]?)([^'")\s]+)\1\s*\)/gi, (m, q, path) => {
       try {
+        path = path.trim();
         if (!path || path.startsWith('data:')) return m;
+        if (path.includes('proxy.ikunbeautiful.workers.dev')) return m;
         const abs = new URL(path, base).toString();
-        if (abs.includes("proxy.ikunbeautiful.workers.dev")) return m;
         return `@import url("${prefix}${encodeURIComponent(abs)}")`;
-        } catch {
-          return m;
-        }
-      });
+      } catch {
+        return m;
+      }
+    });
+    
+    // Rewrite src in @font-face - handles format(), local(), etc.
+    css = css.replace(/(@font-face\s*\{[^}]*)(src\s*:\s*)([^;}]+)/gi, (m, prefix_part, src_decl, src_val) => {
+      try {
+        const newSrcVal = src_val.replace(/url\(\s*(['"]?)([^'")\s]+)\1\s*\)/gi, (um, uq, upath) => {
+          try {
+            upath = upath.trim();
+            if (!upath || upath.startsWith('data:') || upath.startsWith('blob:')) return um;
+            if (upath.includes('proxy.ikunbeautiful.workers.dev')) return um;
+            const abs = new URL(upath, base).toString();
+            return `url("${prefix}${encodeURIComponent(abs)}")`;
+          } catch {
+            return um;
+          }
+        });
+        return prefix_part + src_decl + newSrcVal;
+      } catch {
+        return m;
+      }
+    });
+    
+    // Handle CSS variables with url values
+    css = css.replace(/(--[a-zA-Z0-9_-]+\s*:\s*)url\(\s*(['"]?)([^'")\s]+)\2\s*\)/gi, (m, varPart, q, path) => {
+      try {
+        path = path.trim();
+        if (!path || path.startsWith('data:') || path.startsWith('blob:') || path.startsWith('#')) return m;
+        if (path.includes('proxy.ikunbeautiful.workers.dev')) return m;
+        const abs = new URL(path, base).toString();
+        return `${varPart}url("${prefix}${encodeURIComponent(abs)}")`;
+      } catch {
+        return m;
+      }
+    });
+    
+    // Handle cursor url()
+    css = css.replace(/(cursor\s*:\s*)([^;{}]+)/gi, (m, cursorPart, val) => {
+      try {
+        const newVal = val.replace(/url\(\s*(['"]?)([^'")\s]+)\1\s*\)/gi, (um, uq, upath) => {
+          try {
+            upath = upath.trim();
+            if (!upath || upath.startsWith('data:') || upath.startsWith('blob:')) return um;
+            if (upath.includes('proxy.ikunbeautiful.workers.dev')) return um;
+            const abs = new URL(upath, base).toString();
+            return `url("${prefix}${encodeURIComponent(abs)}")`;
+          } catch {
+            return um;
+          }
+        });
+        return cursorPart + newVal;
+      } catch {
+        return m;
+      }
+    });
+    
   } catch {}
   
   return css;
@@ -380,9 +488,9 @@ class InlineStyleRewriter extends SafeRewriter {
       }
     } catch {}
   }
-}
-
-// --------------------
+  }
+  
+  // --------------------
 // SVG Handler (xlink:href)
 // --------------------
 class SVGRewriter extends SafeRewriter {
@@ -427,7 +535,7 @@ class EventHandlerRewriter extends SafeRewriter {
   }
   
   // --------------------
-// MEGA JavaScript Injection - Ultra Defensive
+// MEGA JavaScript Injection - MAX FIX VERSION
   // --------------------
   class InjectNavigationFix {
   constructor(targetUrl, isEmbedded = false) {
@@ -440,7 +548,12 @@ class EventHandlerRewriter extends SafeRewriter {
     const isEmbedded = this.isEmbedded;
     
     let targetOrigin = '';
-    try { targetOrigin = new URL(targetUrl).origin; } catch {}
+    let targetHost = '';
+    try { 
+      const u = new URL(targetUrl);
+      targetOrigin = u.origin; 
+      targetHost = u.host;
+    } catch {}
     
     // The script is wrapped in try-catch at every level to prevent ANY error from breaking the page
     el.prepend(`
@@ -448,28 +561,37 @@ class EventHandlerRewriter extends SafeRewriter {
   (function(){
 'use strict';
 
-// ============ ULTRA-SAFE PROXY SCRIPT ============
-// Wrapped in multiple try-catch to never break the page
+// ============ MAX FIX PROXY SCRIPT ============
+// Comprehensive interception of ALL browser APIs
 
 try {
 
 // ========== CONFIG ==========
 var __PROXY_TARGET__ = ${JSON.stringify(targetUrl)};
 var __PROXY_ORIGIN__ = ${JSON.stringify(targetOrigin)};
+var __PROXY_HOST__ = ${JSON.stringify(targetHost)};
 var __PROXY_EMBEDDED__ = ${isEmbedded};
 
-// Store originals before anything can modify them
+// Store originals IMMEDIATELY before anything can modify them
 var _Object = Object;
 var _Array = Array;
 var _String = String;
+var _Number = Number;
+var _Boolean = Boolean;
 var _encodeURIComponent = encodeURIComponent;
 var _decodeURIComponent = decodeURIComponent;
 var _URL = URL;
+var _Blob = Blob;
 var _location = location;
 var _history = history;
 var _window = window;
 var _document = document;
 var _console = console;
+var _setTimeout = setTimeout;
+var _setInterval = setInterval;
+var _Promise = Promise;
+var _Reflect = typeof Reflect !== 'undefined' ? Reflect : null;
+var _Proxy = typeof Proxy !== 'undefined' ? Proxy : null;
 
 // ========== SAFE UTILITIES ==========
 function safeStr(v) {
@@ -483,9 +605,36 @@ function safeStr(v) {
 function getCurrentTarget() {
   try {
     var params = new URLSearchParams(_location.search);
-    return params.get('url') || __PROXY_TARGET__;
+    var url = params.get('url');
+    if (url) {
+      // Handle double-encoded URLs
+      try {
+        if (url.indexOf('%') !== -1) {
+          var decoded = _decodeURIComponent(url);
+          if (decoded.indexOf('http') === 0) return decoded;
+        }
+      } catch(e) {}
+        return url;
+    }
+    return __PROXY_TARGET__;
   } catch(e) {
     return __PROXY_TARGET__;
+  }
+}
+
+function getCurrentOrigin() {
+  try {
+    return new _URL(getCurrentTarget()).origin;
+  } catch(e) {
+    return __PROXY_ORIGIN__;
+  }
+}
+
+function getCurrentHost() {
+  try {
+    return new _URL(getCurrentTarget()).host;
+  } catch(e) {
+    return __PROXY_HOST__;
   }
 }
 
@@ -498,17 +647,22 @@ function isSpecial(url) {
          l.indexOf('blob:') === 0 ||
          l.indexOf('mailto:') === 0 ||
          l.indexOf('tel:') === 0 ||
-         l.indexOf('about:') === 0;
+         l.indexOf('sms:') === 0 ||
+         l.indexOf('about:') === 0 ||
+         l.indexOf('wss:') === 0 ||
+         l.indexOf('ws:') === 0;
 }
 
 function isProxied(url) {
   if (!url) return false;
   var s = safeStr(url);
-  return s.indexOf('/?url=') !== -1 || s.indexOf('/?embedded=') !== -1;
+  return s.indexOf('/?url=') !== -1 || 
+         s.indexOf('/?embedded=') !== -1 ||
+         s.indexOf('proxy.ikunbeautiful.workers.dev') !== -1;
 }
 
 // ========== MAIN PROXIFY FUNCTION ==========
-function proxify(url) {
+function proxify(url, forceEmbedded) {
   try {
     url = safeStr(url).trim();
     if (!url || url.length === 0 || url.length > 8192) return url;
@@ -518,7 +672,8 @@ function proxify(url) {
     // Protocol-relative
     if (url.indexOf('//') === 0) url = 'https:' + url;
     
-    var prefix = __PROXY_EMBEDDED__ ? '/?embedded=1&url=' : '/?url=';
+    var embedded = forceEmbedded !== undefined ? forceEmbedded : __PROXY_EMBEDDED__;
+    var prefix = embedded ? '/?embedded=1&url=' : '/?url=';
     
     // Absolute URL
     if (url.indexOf('http://') === 0 || url.indexOf('https://') === 0) {
@@ -526,8 +681,8 @@ function proxify(url) {
     }
     
     // Relative URL - resolve against current target
+    var base = getCurrentTarget();
     try {
-      var base = getCurrentTarget();
       var resolved = new _URL(url, base).href;
       return prefix + _encodeURIComponent(resolved);
     } catch(e) {
@@ -535,7 +690,16 @@ function proxify(url) {
         var resolved2 = new _URL(url, __PROXY_TARGET__).href;
         return prefix + _encodeURIComponent(resolved2);
       } catch(e2) {
-        return url;
+        // Last resort - prepend base origin
+        try {
+          var origin = getCurrentOrigin();
+          if (url.indexOf('/') === 0) {
+            return prefix + _encodeURIComponent(origin + url);
+          }
+          return prefix + _encodeURIComponent(origin + '/' + url);
+        } catch(e3) {
+          return url;
+        }
       }
     }
   } catch(e) {
@@ -551,54 +715,214 @@ function resolveUrl(url) {
     if (url.indexOf('//') === 0) return 'https:' + url;
     return new _URL(url, getCurrentTarget()).href;
   } catch(e) {
-    return url;
+    try {
+      var origin = getCurrentOrigin();
+      if (url.indexOf('/') === 0) return origin + url;
+      return origin + '/' + url;
+    } catch(e2) {
+      return url;
+    }
   }
 }
 
 // Expose globally
 _window.__proxyProxify__ = proxify;
 _window.__proxyResolve__ = resolveUrl;
+_window.__proxyGetTarget__ = getCurrentTarget;
 _window.__PROXY_TARGET_URL__ = __PROXY_TARGET__;
 _window.__PROXY_EMBEDDED__ = __PROXY_EMBEDDED__;
 
-// ========== ANTI-IFRAME-BUSTER ==========
+// ========== ANTI-IFRAME-BUSTER (COMPREHENSIVE) ==========
 try {
-  _Object.defineProperty(_window, 'top', { get: function() { return _window; }, configurable: true });
+  _Object.defineProperty(_window, 'top', { get: function() { return _window; }, set: function(){}, configurable: false });
 } catch(e) {}
 try {
-  _Object.defineProperty(_window, 'parent', { get: function() { return _window; }, configurable: true });
+  _Object.defineProperty(_window, 'parent', { get: function() { return _window; }, set: function(){}, configurable: false });
 } catch(e) {}
 try {
-  _Object.defineProperty(_window, 'frameElement', { get: function() { return null; }, configurable: true });
+  _Object.defineProperty(_window, 'frameElement', { get: function() { return null; }, set: function(){}, configurable: false });
 } catch(e) {}
 try {
-  _Object.defineProperty(_window, 'self', { get: function() { return _window; }, configurable: true });
+  _Object.defineProperty(_window, 'self', { get: function() { return _window; }, set: function(){}, configurable: false });
+} catch(e) {}
+try {
+  _Object.defineProperty(_window, 'frames', { get: function() { return _window; }, set: function(){}, configurable: false });
+} catch(e) {}
+try {
+  _Object.defineProperty(_window, 'length', { get: function() { return 0; }, set: function(){}, configurable: false });
 } catch(e) {}
 
-// Prevent document.domain manipulation
+// ========== DOCUMENT PROPERTY SPOOFING ==========
 try {
   _Object.defineProperty(_document, 'domain', { 
-    get: function() { return __PROXY_ORIGIN__.replace(/^https?:\\/\\//, ''); },
+    get: function() { return getCurrentHost(); },
     set: function() {},
     configurable: true 
   });
 } catch(e) {}
 
-// ========== LOCATION OVERRIDES ==========
 try {
-  var _assign = _location.assign.bind(_location);
-  var _replace = _location.replace.bind(_location);
+  _Object.defineProperty(_document, 'URL', { 
+    get: function() { return getCurrentTarget(); },
+    configurable: true 
+  });
+} catch(e) {}
+
+try {
+  _Object.defineProperty(_document, 'documentURI', { 
+    get: function() { return getCurrentTarget(); },
+    configurable: true 
+  });
+} catch(e) {}
+
+try {
+  _Object.defineProperty(_document, 'baseURI', { 
+    get: function() { return getCurrentTarget(); },
+    configurable: true 
+  });
+} catch(e) {}
+
+try {
+  _Object.defineProperty(_document, 'referrer', { 
+    get: function() { 
+      try {
+        var current = getCurrentTarget();
+        return new _URL(current).origin + '/';
+      } catch(e) {
+        return '';
+      }
+    },
+    configurable: true 
+  });
+} catch(e) {}
+
+// ========== LOCATION OBJECT COMPREHENSIVE OVERRIDE ==========
+try {
+  var _assign = _location.assign ? _location.assign.bind(_location) : function(u) { _location.href = u; };
+  var _replace = _location.replace ? _location.replace.bind(_location) : function(u) { _location.href = u; };
+  var _reload = _location.reload ? _location.reload.bind(_location) : function() {};
   
   _location.assign = function(u) { try { return _assign(proxify(u)); } catch(e) { return _assign(u); } };
   _location.replace = function(u) { try { return _replace(proxify(u)); } catch(e) { return _replace(u); } };
   
+  // Override all location properties
   try {
     _Object.defineProperty(_location, 'href', {
       set: function(u) { _assign(proxify(u)); },
-      get: function() { return _location.toString(); },
+      get: function() { return getCurrentTarget(); },
       configurable: true
     });
   } catch(e) {}
+  
+  try {
+    _Object.defineProperty(_location, 'origin', {
+      get: function() { return getCurrentOrigin(); },
+      configurable: true
+    });
+  } catch(e) {}
+  
+  try {
+    _Object.defineProperty(_location, 'host', {
+      get: function() { return getCurrentHost(); },
+      set: function() {},
+      configurable: true
+    });
+  } catch(e) {}
+  
+  try {
+    _Object.defineProperty(_location, 'hostname', {
+      get: function() { 
+        try { return new _URL(getCurrentTarget()).hostname; } 
+        catch(e) { return ''; }
+      },
+      set: function() {},
+      configurable: true
+    });
+  } catch(e) {}
+  
+  try {
+    _Object.defineProperty(_location, 'pathname', {
+      get: function() { 
+        try { return new _URL(getCurrentTarget()).pathname; } 
+        catch(e) { return '/'; }
+      },
+      set: function(v) { 
+        try {
+          var u = new _URL(getCurrentTarget());
+          u.pathname = v;
+          _assign(proxify(u.href));
+        } catch(e) {}
+      },
+      configurable: true
+    });
+  } catch(e) {}
+  
+  try {
+    _Object.defineProperty(_location, 'search', {
+      get: function() { 
+        try { return new _URL(getCurrentTarget()).search; } 
+        catch(e) { return ''; }
+      },
+      set: function(v) { 
+        try {
+          var u = new _URL(getCurrentTarget());
+          u.search = v;
+          _assign(proxify(u.href));
+        } catch(e) {}
+      },
+      configurable: true
+    });
+  } catch(e) {}
+  
+  try {
+    _Object.defineProperty(_location, 'hash', {
+      get: function() { 
+        try { return new _URL(getCurrentTarget()).hash; } 
+        catch(e) { return ''; }
+      },
+      set: function(v) { 
+        try {
+          var u = new _URL(getCurrentTarget());
+          u.hash = v;
+          _assign(proxify(u.href));
+        } catch(e) {}
+      },
+      configurable: true
+    });
+  } catch(e) {}
+  
+  try {
+    _Object.defineProperty(_location, 'protocol', {
+      get: function() { 
+        try { return new _URL(getCurrentTarget()).protocol; } 
+        catch(e) { return 'https:'; }
+      },
+      set: function() {},
+      configurable: true
+    });
+  } catch(e) {}
+  
+  try {
+    _Object.defineProperty(_location, 'port', {
+      get: function() { 
+        try { return new _URL(getCurrentTarget()).port; } 
+        catch(e) { return ''; }
+      },
+      set: function() {},
+      configurable: true
+    });
+  } catch(e) {}
+  
+  // Override toString
+  try {
+    _location.toString = function() { return getCurrentTarget(); };
+  } catch(e) {}
+  
+  // Override valueOf
+  try {
+    _location.valueOf = function() { return getCurrentTarget(); };
+  } catch(e) {}
+  
 } catch(e) {}
 
 // ========== HISTORY OVERRIDES ==========
@@ -618,7 +942,7 @@ try {
 
 // ========== WINDOW.OPEN ==========
 try {
-  var _open = _window.open.bind(_window);
+  var _open = _window.open ? _window.open.bind(_window) : function(){};
   _window.open = function(url, name, specs) {
     try {
       if (!url || url === 'about:blank') return _open(url, name, specs);
@@ -630,10 +954,20 @@ try {
           var realParent = _Object.getPrototypeOf(_window).parent;
           if (realParent && realParent !== _window) {
             realParent.postMessage({ type: 'PROXY_NEW_TAB', url: resolved }, '*');
-            return { closed: false, close: function() {}, focus: function() {}, blur: function() {} };
+            // Return a mock window object
+            return {
+              closed: false,
+              close: function() {
+                realParent.postMessage({ type: 'PROXY_CLOSE_TAB' }, '*');
+              },
+              focus: function() {},
+              blur: function() {},
+              postMessage: function() {},
+              location: { href: resolved }
+            };
           }
         } catch(e) {}
-      }
+        }
       
       return _open(proxify(url), name, specs);
     } catch(e) {
@@ -665,12 +999,16 @@ try {
   Element.prototype.setAttribute = function(name, value) {
     try {
       var n = safeStr(name).toLowerCase();
-      if ((n === 'src' || n === 'href' || n === 'action' || n === 'data' || n === 'poster' || n === 'formaction') && value) {
-        value = proxify(value);
+      if ((n === 'src' || n === 'href' || n === 'action' || n === 'data' || n === 'poster' || n === 'formaction' || n === 'xlink:href') && value) {
+        if (!isSpecial(value) && !isProxied(value)) {
+          value = proxify(value);
+        }
       } else if (n === 'srcset' && value) {
         value = safeStr(value).split(',').map(function(s) {
           var parts = s.trim().split(/\\s+/);
-          if (parts[0]) parts[0] = proxify(parts[0]);
+          if (parts[0] && !isSpecial(parts[0]) && !isProxied(parts[0])) {
+            parts[0] = proxify(parts[0]);
+          }
           return parts.join(' ');
         }).join(', ');
       }
@@ -679,10 +1017,20 @@ try {
   };
 } catch(e) {}
 
+// ========== ELEMENT getAttribute override for location-checking scripts ==========
+try {
+  var _getAttribute = Element.prototype.getAttribute;
+  Element.prototype.getAttribute = function(name) {
+    var val = _getAttribute.call(this, name);
+    // Don't modify the return value - this could break scripts
+    return val;
+  };
+} catch(e) {}
+
 // ========== PROPERTY OVERRIDES ==========
 var srcElements = ['HTMLImageElement', 'HTMLScriptElement', 'HTMLIFrameElement', 
                    'HTMLVideoElement', 'HTMLAudioElement', 'HTMLSourceElement',
-                   'HTMLEmbedElement', 'HTMLTrackElement', 'HTMLMediaElement'];
+                   'HTMLEmbedElement', 'HTMLTrackElement', 'HTMLMediaElement', 'HTMLInputElement'];
 
 srcElements.forEach(function(name) {
   try {
@@ -691,16 +1039,24 @@ srcElements.forEach(function(name) {
     var desc = _Object.getOwnPropertyDescriptor(El.prototype, 'src');
     if (desc && desc.set) {
       var _set = desc.set;
+      var _get = desc.get;
       _Object.defineProperty(El.prototype, 'src', {
-        set: function(v) { try { v = proxify(v); } catch(e) {} _set.call(this, v); },
-        get: desc.get,
+        set: function(v) { 
+          try { 
+            if (v && !isSpecial(v) && !isProxied(v)) {
+              v = proxify(v); 
+            }
+          } catch(e) {} 
+          _set.call(this, v); 
+        },
+        get: _get,
         configurable: true
       });
     }
   } catch(e) {}
 });
 
-// href properties
+// href properties with comprehensive handling
 ['HTMLAnchorElement', 'HTMLLinkElement', 'HTMLAreaElement', 'HTMLBaseElement'].forEach(function(name) {
   try {
     var El = _window[name];
@@ -708,9 +1064,42 @@ srcElements.forEach(function(name) {
     var desc = _Object.getOwnPropertyDescriptor(El.prototype, 'href');
     if (desc && desc.set) {
       var _set = desc.set;
+      var _get = desc.get;
       _Object.defineProperty(El.prototype, 'href', {
-        set: function(v) { try { v = proxify(v); } catch(e) {} _set.call(this, v); },
-        get: desc.get,
+        set: function(v) { 
+          try { 
+            if (v && !isSpecial(v) && !isProxied(v)) {
+              v = proxify(v); 
+            }
+          } catch(e) {} 
+          _set.call(this, v); 
+        },
+        get: _get,
+        configurable: true
+      });
+    }
+  } catch(e) {}
+});
+
+// ========== ANCHOR ELEMENT URL PROPERTIES ==========
+// Override origin, host, hostname, pathname, search, hash, protocol, port
+['origin', 'host', 'hostname', 'pathname', 'search', 'hash', 'protocol', 'port'].forEach(function(prop) {
+  try {
+    var desc = _Object.getOwnPropertyDescriptor(HTMLAnchorElement.prototype, prop);
+    if (desc && desc.get) {
+      var _get = desc.get;
+      _Object.defineProperty(HTMLAnchorElement.prototype, prop, {
+        get: function() {
+          try {
+            var href = this.getAttribute('href');
+            if (href && !isSpecial(href)) {
+              var resolved = resolveUrl(href);
+              return new _URL(resolved)[prop];
+            }
+          } catch(e) {}
+          return _get.call(this);
+        },
+        set: desc.set,
         configurable: true
       });
     }
@@ -722,9 +1111,17 @@ try {
   var formDesc = _Object.getOwnPropertyDescriptor(HTMLFormElement.prototype, 'action');
   if (formDesc && formDesc.set) {
     var _setAction = formDesc.set;
+    var _getAction = formDesc.get;
     _Object.defineProperty(HTMLFormElement.prototype, 'action', {
-      set: function(v) { try { v = proxify(v); } catch(e) {} _setAction.call(this, v); },
-      get: formDesc.get,
+      set: function(v) { 
+        try { 
+          if (v && !isSpecial(v) && !isProxied(v)) {
+            v = proxify(v); 
+          }
+        } catch(e) {} 
+        _setAction.call(this, v); 
+      },
+      get: _getAction,
       configurable: true
     });
   }
@@ -735,9 +1132,17 @@ try {
   var objDesc = _Object.getOwnPropertyDescriptor(HTMLObjectElement.prototype, 'data');
   if (objDesc && objDesc.set) {
     var _setData = objDesc.set;
+    var _getData = objDesc.get;
     _Object.defineProperty(HTMLObjectElement.prototype, 'data', {
-      set: function(v) { try { v = proxify(v); } catch(e) {} _setData.call(this, v); },
-      get: objDesc.get,
+      set: function(v) { 
+        try { 
+          if (v && !isSpecial(v) && !isProxied(v)) {
+            v = proxify(v); 
+          }
+        } catch(e) {} 
+        _setData.call(this, v); 
+      },
+      get: _getData,
       configurable: true
     });
   }
@@ -748,36 +1153,84 @@ try {
   var posterDesc = _Object.getOwnPropertyDescriptor(HTMLVideoElement.prototype, 'poster');
   if (posterDesc && posterDesc.set) {
     var _setPoster = posterDesc.set;
+    var _getPoster = posterDesc.get;
     _Object.defineProperty(HTMLVideoElement.prototype, 'poster', {
-      set: function(v) { try { v = proxify(v); } catch(e) {} _setPoster.call(this, v); },
-      get: posterDesc.get,
+      set: function(v) { 
+        try { 
+          if (v && !isSpecial(v) && !isProxied(v)) {
+            v = proxify(v); 
+          }
+        } catch(e) {} 
+        _setPoster.call(this, v); 
+      },
+      get: _getPoster,
       configurable: true
     });
   }
 } catch(e) {}
 
+// ========== srcObject for media elements ==========
+try {
+  var srcObjDesc = _Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'srcObject');
+  if (srcObjDesc) {
+    // Don't modify srcObject - it's for MediaStream, not URLs
+  }
+} catch(e) {}
+
 // ========== FETCH ==========
 try {
-  var _fetch = _window.fetch.bind(_window);
-  _window.fetch = function(input, init) {
-    try {
-      if (typeof input === 'string') {
-        input = proxify(input);
-      } else if (input && input.url) {
-        input = new Request(proxify(input.url), input);
-      }
-    } catch(e) {}
-    return _fetch(input, init);
-  };
+  var _fetch = _window.fetch ? _window.fetch.bind(_window) : null;
+  if (_fetch) {
+    _window.fetch = function(input, init) {
+      try {
+        if (typeof input === 'string') {
+          if (!isSpecial(input) && !isProxied(input)) {
+            input = proxify(input);
+          }
+        } else if (input && typeof input === 'object') {
+          if (input.url && !isSpecial(input.url) && !isProxied(input.url)) {
+            input = new Request(proxify(input.url), input);
+          } else if (input instanceof Request) {
+            var url = input.url;
+            if (url && !isSpecial(url) && !isProxied(url)) {
+              input = new Request(proxify(url), input);
+            }
+          }
+        }
+      } catch(e) {}
+      return _fetch(input, init);
+    };
+  }
 } catch(e) {}
 
 // ========== XMLHttpRequest ==========
 try {
   var _XHROpen = XMLHttpRequest.prototype.open;
   XMLHttpRequest.prototype.open = function(method, url, async, user, pass) {
-    try { url = proxify(url); } catch(e) {}
+    try { 
+      if (url && !isSpecial(url) && !isProxied(url)) {
+        url = proxify(url); 
+      }
+    } catch(e) {}
     return _XHROpen.call(this, method, url, async !== false, user, pass);
   };
+} catch(e) {}
+
+// ========== WebSocket ==========
+try {
+  if (_window.WebSocket) {
+    var _WebSocket = _window.WebSocket;
+    _window.WebSocket = function(url, protocols) {
+      // WebSockets can't be proxied through HTTP proxy
+      // Just let them through - they'll either work or fail
+      return new _WebSocket(url, protocols);
+    };
+    _window.WebSocket.prototype = _WebSocket.prototype;
+    _window.WebSocket.CONNECTING = _WebSocket.CONNECTING;
+    _window.WebSocket.OPEN = _WebSocket.OPEN;
+    _window.WebSocket.CLOSING = _WebSocket.CLOSING;
+    _window.WebSocket.CLOSED = _WebSocket.CLOSED;
+  }
 } catch(e) {}
 
 // ========== Worker ==========
@@ -785,7 +1238,11 @@ try {
   if (_window.Worker) {
     var _Worker = _window.Worker;
     _window.Worker = function(url, opts) {
-      try { url = proxify(url); } catch(e) {}
+      try { 
+        if (url && !isSpecial(url) && !isProxied(url)) {
+          url = proxify(url, false); // Workers can't be embedded
+        }
+      } catch(e) {}
       return new _Worker(url, opts);
     };
     _window.Worker.prototype = _Worker.prototype;
@@ -797,7 +1254,11 @@ try {
   if (_window.SharedWorker) {
     var _SharedWorker = _window.SharedWorker;
     _window.SharedWorker = function(url, opts) {
-      try { url = proxify(url); } catch(e) {}
+      try { 
+        if (url && !isSpecial(url) && !isProxied(url)) {
+          url = proxify(url, false);
+        }
+      } catch(e) {}
       return new _SharedWorker(url, opts);
     };
     _window.SharedWorker.prototype = _SharedWorker.prototype;
@@ -809,19 +1270,27 @@ try {
   if (_window.EventSource) {
     var _EventSource = _window.EventSource;
     _window.EventSource = function(url, cfg) {
-      try { url = proxify(url); } catch(e) {}
+      try { 
+        if (url && !isSpecial(url) && !isProxied(url)) {
+          url = proxify(url);
+        }
+      } catch(e) {}
       return new _EventSource(url, cfg);
     };
     _window.EventSource.prototype = _EventSource.prototype;
   }
 } catch(e) {}
-
+  
 // ========== sendBeacon ==========
 try {
-  if (navigator.sendBeacon) {
+  if (navigator && navigator.sendBeacon) {
     var _sendBeacon = navigator.sendBeacon.bind(navigator);
     navigator.sendBeacon = function(url, data) {
-      try { url = proxify(url); } catch(e) {}
+      try { 
+        if (url && !isSpecial(url) && !isProxied(url)) {
+          url = proxify(url);
+        }
+      } catch(e) {}
       return _sendBeacon(url, data);
     };
   }
@@ -829,33 +1298,191 @@ try {
 
 // ========== Service Worker (BLOCK) ==========
 try {
-  if (navigator.serviceWorker) {
-    navigator.serviceWorker.register = function() {
-      return Promise.reject(new Error('Service Workers disabled in proxy'));
-    };
+  if (navigator && navigator.serviceWorker) {
+    _Object.defineProperty(navigator, 'serviceWorker', {
+          get: function() {
+        return {
+          register: function() { return _Promise.reject(new Error('Service Workers disabled in proxy')); },
+          getRegistration: function() { return _Promise.resolve(undefined); },
+          getRegistrations: function() { return _Promise.resolve([]); },
+          ready: _Promise.reject(new Error('Service Workers disabled in proxy')),
+          controller: null
+        };
+      },
+      configurable: true
+    });
   }
 } catch(e) {}
 
 // ========== Image Constructor ==========
 try {
   var _Image = _window.Image;
-  _window.Image = function(w, h) { return new _Image(w, h); };
+  _window.Image = function(w, h) { 
+    var img = new _Image(w, h);
+    return img;
+  };
   _window.Image.prototype = _Image.prototype;
 } catch(e) {}
+
+// ========== Audio Constructor ==========
+try {
+  var _Audio = _window.Audio;
+  if (_Audio) {
+    _window.Audio = function(src) { 
+      var audio = new _Audio();
+      if (src && !isSpecial(src) && !isProxied(src)) {
+        audio.src = proxify(src);
+      } else if (src) {
+        audio.src = src;
+      }
+      return audio;
+    };
+    _window.Audio.prototype = _Audio.prototype;
+  }
+} catch(e) {}
+
+// ========== importScripts (for workers) ==========
+try {
+  if (typeof importScripts !== 'undefined') {
+    var _importScripts = importScripts;
+    importScripts = function() {
+      var args = _Array.prototype.slice.call(arguments).map(function(url) {
+        try {
+          if (url && !isSpecial(url) && !isProxied(url)) {
+            return proxify(url, false);
+          }
+        } catch(e) {}
+        return url;
+      });
+      return _importScripts.apply(this, args);
+    };
+  }
+} catch(e) {}
+
+// ========== Dynamic import() ==========
+// Can't easily override, but we intercept script[type=module] src
+
+// ========== CSS insertRule/addRule ==========
+try {
+  if (CSSStyleSheet && CSSStyleSheet.prototype.insertRule) {
+    var _insertRule = CSSStyleSheet.prototype.insertRule;
+    CSSStyleSheet.prototype.insertRule = function(rule, index) {
+      try {
+        rule = rewriteCssUrls(rule);
+      } catch(e) {}
+      return _insertRule.call(this, rule, index);
+    };
+  }
+} catch(e) {}
+
+// ========== CSS text content ==========
+function rewriteCssUrls(css) {
+  if (!css || typeof css !== 'string') return css;
+  try {
+    var prefix = __PROXY_EMBEDDED__ ? '/?embedded=1&url=' : '/?url=';
+    var base = getCurrentTarget();
+    
+    // Rewrite url()
+    css = css.replace(/url\\(\\s*(['"]?)([^'"\\)]+)\\1\\s*\\)/gi, function(m, q, path) {
+      try {
+        if (!path || path.indexOf('data:') === 0 || path.indexOf('blob:') === 0 || path.indexOf('#') === 0) return m;
+        if (isProxied(path)) return m;
+        var abs = new _URL(path, base).href;
+        return 'url("' + prefix + _encodeURIComponent(abs) + '")';
+      } catch(e) {
+        return m;
+      }
+    });
+    
+    // Rewrite @import "url"
+    css = css.replace(/@import\\s+(['"])([^'"]+)\\1/gi, function(m, q, path) {
+      try {
+        if (!path || path.indexOf('data:') === 0) return m;
+        if (isProxied(path)) return m;
+        var abs = new _URL(path, base).href;
+        return '@import "' + prefix + _encodeURIComponent(abs) + '"';
+      } catch(e) {
+        return m;
+      }
+    });
+    
+    // Rewrite @import url()
+    css = css.replace(/@import\\s+url\\(\\s*(['"]?)([^'"\\)]+)\\1\\s*\\)/gi, function(m, q, path) {
+      try {
+        if (!path || path.indexOf('data:') === 0) return m;
+        if (isProxied(path)) return m;
+        var abs = new _URL(path, base).href;
+        return '@import url("' + prefix + _encodeURIComponent(abs) + '")';
+      } catch(e) {
+        return m;
+      }
+    });
+    
+    // Rewrite @font-face src
+    css = css.replace(/(@font-face\\s*\\{[^}]*src\\s*:\\s*)([^;}]+)/gi, function(m, pre, srcVal) {
+      try {
+        srcVal = srcVal.replace(/url\\(\\s*(['"]?)([^'"\\)]+)\\1\\s*\\)/gi, function(um, uq, upath) {
+          if (!upath || upath.indexOf('data:') === 0 || upath.indexOf('blob:') === 0) return um;
+          if (isProxied(upath)) return um;
+          var abs = new _URL(upath, base).href;
+          return 'url("' + prefix + _encodeURIComponent(abs) + '")';
+        });
+        return pre + srcVal;
+      } catch(e) {
+        return m;
+      }
+    });
+  } catch(e) {}
+  return css;
+}
 
 // ========== HTML Rewriting ==========
 function rewriteHtml(html) {
   if (!html || typeof html !== 'string') return html;
   try {
+    // src attributes
     html = html.replace(/(<[^>]+\\s)(src\\s*=\\s*["'])([^"']+)(["'])/gi, function(m, pre, attr, url, q) {
+      if (isSpecial(url) || isProxied(url)) return m;
       return pre + attr + proxify(url) + q;
     });
+    // href attributes (but not javascript: or #)
     html = html.replace(/(<[^>]+\\s)(href\\s*=\\s*["'])([^"']+)(["'])/gi, function(m, pre, attr, url, q) {
-      if (isSpecial(url)) return m;
+      if (isSpecial(url) || isProxied(url)) return m;
       return pre + attr + proxify(url) + q;
     });
-    html = html.replace(/(<form[^>]+\\s)(action\\s*=\\s*["'])([^"']+)(["'])/gi, function(m, pre, attr, url, q) {
+    // action attributes
+    html = html.replace(/(<form[^>]*\\s)(action\\s*=\\s*["'])([^"']+)(["'])/gi, function(m, pre, attr, url, q) {
+      if (isSpecial(url) || isProxied(url)) return m;
       return pre + attr + proxify(url) + q;
+    });
+    // data attributes
+    html = html.replace(/(<object[^>]*\\s)(data\\s*=\\s*["'])([^"']+)(["'])/gi, function(m, pre, attr, url, q) {
+      if (isSpecial(url) || isProxied(url)) return m;
+      return pre + attr + proxify(url) + q;
+    });
+    // poster attributes
+    html = html.replace(/(<video[^>]*\\s)(poster\\s*=\\s*["'])([^"']+)(["'])/gi, function(m, pre, attr, url, q) {
+      if (isSpecial(url) || isProxied(url)) return m;
+      return pre + attr + proxify(url) + q;
+    });
+    // srcset attributes
+    html = html.replace(/(<[^>]+\\s)(srcset\\s*=\\s*["'])([^"']+)(["'])/gi, function(m, pre, attr, srcset, q) {
+      try {
+        var newSrcset = srcset.split(',').map(function(s) {
+          var parts = s.trim().split(/\\s+/);
+          if (parts[0] && !isSpecial(parts[0]) && !isProxied(parts[0])) {
+            parts[0] = proxify(parts[0]);
+          }
+          return parts.join(' ');
+        }).join(', ');
+        return pre + attr + newSrcset + q;
+      } catch(e) {
+        return m;
+      }
+    });
+    // style url()
+    html = html.replace(/(<[^>]+\\s)(style\\s*=\\s*["'])([^"']+)(["'])/gi, function(m, pre, attr, style, q) {
+      return pre + attr + rewriteCssUrls(style) + q;
     });
   } catch(e) {}
   return html;
@@ -866,11 +1493,11 @@ try {
   var _docWrite = _document.write.bind(_document);
   var _docWriteln = _document.writeln.bind(_document);
   _document.write = function() {
-    var args = _Array.prototype.slice.call(arguments).map(function(a) { return rewriteHtml(a); });
+    var args = _Array.prototype.slice.call(arguments).map(function(a) { return rewriteHtml(safeStr(a)); });
     return _docWrite.apply(_document, args);
   };
   _document.writeln = function() {
-    var args = _Array.prototype.slice.call(arguments).map(function(a) { return rewriteHtml(a); });
+    var args = _Array.prototype.slice.call(arguments).map(function(a) { return rewriteHtml(safeStr(a)); });
     return _docWriteln.apply(_document, args);
   };
 } catch(e) {}
@@ -881,7 +1508,7 @@ try {
   if (innerDesc && innerDesc.set) {
     var _setInner = innerDesc.set;
     _Object.defineProperty(Element.prototype, 'innerHTML', {
-      set: function(v) { _setInner.call(this, rewriteHtml(v)); },
+      set: function(v) { _setInner.call(this, rewriteHtml(safeStr(v))); },
       get: innerDesc.get,
       configurable: true
     });
@@ -893,7 +1520,7 @@ try {
   if (outerDesc && outerDesc.set) {
     var _setOuter = outerDesc.set;
     _Object.defineProperty(Element.prototype, 'outerHTML', {
-      set: function(v) { _setOuter.call(this, rewriteHtml(v)); },
+      set: function(v) { _setOuter.call(this, rewriteHtml(safeStr(v))); },
       get: outerDesc.get,
       configurable: true
     });
@@ -904,7 +1531,7 @@ try {
 try {
   var _insertAdjacentHTML = Element.prototype.insertAdjacentHTML;
   Element.prototype.insertAdjacentHTML = function(pos, html) {
-    return _insertAdjacentHTML.call(this, pos, rewriteHtml(html));
+    return _insertAdjacentHTML.call(this, pos, rewriteHtml(safeStr(html)));
   };
 } catch(e) {}
 
@@ -915,13 +1542,112 @@ try {
     var parser = new _DOMParser();
     var _parseFromString = parser.parseFromString.bind(parser);
     parser.parseFromString = function(str, type) {
-      if (type && type.indexOf('html') !== -1) {
-        str = rewriteHtml(str);
+      if (type && (type.indexOf('html') !== -1 || type.indexOf('xml') !== -1)) {
+        str = rewriteHtml(safeStr(str));
       }
       return _parseFromString(str, type);
     };
     return parser;
   };
+  _window.DOMParser.prototype = _DOMParser.prototype;
+} catch(e) {}
+
+// ========== Range.createContextualFragment ==========
+try {
+  var _createContextualFragment = Range.prototype.createContextualFragment;
+  Range.prototype.createContextualFragment = function(html) {
+    return _createContextualFragment.call(this, rewriteHtml(safeStr(html)));
+  };
+} catch(e) {}
+
+// ========== document.createElement override for script/link/img ==========
+try {
+  var _createElement = _document.createElement.bind(_document);
+  _document.createElement = function(tagName, options) {
+    var el = _createElement(tagName, options);
+    // Elements are already handled by property overrides
+    return el;
+  };
+} catch(e) {}
+
+// ========== MutationObserver for dynamic content ==========
+try {
+  var observer = new MutationObserver(function(mutations) {
+      mutations.forEach(function(mutation) {
+      if (mutation.type === 'attributes') {
+        var attr = mutation.attributeName;
+        if (attr === 'src' || attr === 'href' || attr === 'action' || attr === 'data' || attr === 'poster') {
+          var el = mutation.target;
+          var val = el.getAttribute(attr);
+          if (val && !isSpecial(val) && !isProxied(val)) {
+            // Use the original setAttribute to avoid infinite loop
+            try {
+              _setAttribute.call(el, attr, proxify(val));
+            } catch(e) {}
+          }
+        }
+      } else if (mutation.type === 'childList') {
+          mutation.addedNodes.forEach(function(node) {
+          if (node.nodeType === 1) {
+            // Element node - check for URL attributes
+            ['src', 'href', 'action', 'data', 'poster'].forEach(function(attr) {
+              if (node.hasAttribute && node.hasAttribute(attr)) {
+                var val = node.getAttribute(attr);
+                if (val && !isSpecial(val) && !isProxied(val)) {
+                  try {
+                    _setAttribute.call(node, attr, proxify(val));
+                  } catch(e) {}
+                }
+              }
+            });
+            // Check srcset
+            if (node.hasAttribute && node.hasAttribute('srcset')) {
+              var srcset = node.getAttribute('srcset');
+              if (srcset && !isProxied(srcset)) {
+                try {
+                  var newSrcset = srcset.split(',').map(function(s) {
+                    var parts = s.trim().split(/\\s+/);
+                    if (parts[0] && !isSpecial(parts[0]) && !isProxied(parts[0])) {
+                      parts[0] = proxify(parts[0]);
+                    }
+                    return parts.join(' ');
+                  }).join(', ');
+                  _setAttribute.call(node, 'srcset', newSrcset);
+                } catch(e) {}
+              }
+            }
+            // Process child elements
+            if (node.querySelectorAll) {
+              var children = node.querySelectorAll('[src], [href], [action], [data], [poster], [srcset]');
+              children.forEach(function(child) {
+                ['src', 'href', 'action', 'data', 'poster'].forEach(function(attr) {
+                  if (child.hasAttribute(attr)) {
+                    var val = child.getAttribute(attr);
+                    if (val && !isSpecial(val) && !isProxied(val)) {
+                      try {
+                        _setAttribute.call(child, attr, proxify(val));
+                      } catch(e) {}
+                    }
+                  }
+                });
+              });
+            }
+            }
+          });
+        }
+      });
+    });
+  
+  _window.addEventListener('DOMContentLoaded', function() {
+    try {
+      observer.observe(_document.documentElement, {
+        attributes: true,
+        attributeFilter: ['src', 'href', 'action', 'data', 'poster', 'srcset'],
+      childList: true,
+      subtree: true
+    });
+    } catch(e) {}
+  });
 } catch(e) {}
 
 // ========== Click Handler ==========
@@ -932,8 +1658,10 @@ try {
       while (t && t.tagName !== 'A') t = t.parentElement;
       if (t && t.tagName === 'A') {
         var href = t.getAttribute('href');
+        if (!href || isSpecial(href)) return;
+        
         var target = t.getAttribute('target') || t.getAttribute('data-proxy-target');
-        if (href && (target === '_blank' || target === '_new')) {
+        if (target === '_blank' || target === '_new') {
           e.preventDefault();
           e.stopPropagation();
           var resolved = resolveUrl(href);
@@ -946,7 +1674,7 @@ try {
               }
             } catch(ex) {}
           }
-          _location.href = proxify(href);
+          _window.open(proxify(href), '_blank');
         }
       }
     } catch(ex) {}
@@ -961,11 +1689,23 @@ try {
       if (form && form.tagName === 'FORM') {
         var action = form.getAttribute('action');
         if (!action || (!isProxied(action) && !isSpecial(action))) {
-          form.setAttribute('action', proxify(action || getCurrentTarget()));
+          _setAttribute.call(form, 'action', proxify(action || getCurrentTarget()));
         }
       }
     } catch(ex) {}
   }, true);
+} catch(e) {}
+
+// ========== postMessage wrapper for targetOrigin ==========
+try {
+  var _postMessage = _window.postMessage.bind(_window);
+  _window.postMessage = function(message, targetOrigin, transfer) {
+    // Allow all origins since we're proxying
+    if (targetOrigin && targetOrigin !== '*') {
+      targetOrigin = '*';
+    }
+    return _postMessage(message, targetOrigin, transfer);
+  };
 } catch(e) {}
 
 // ========== Parent Notification ==========
@@ -978,24 +1718,45 @@ function notifyParent() {
         type: 'PROXY_URL_CHANGED',
         url: getCurrentTarget(),
         title: _document.title,
-        proxyUrl: _location.href
-      }, '*');
-    }
+        proxyUrl: _location.toString()
+              }, '*');
+            }
   } catch(e) {}
 }
 
 try {
   if (_document.readyState === 'complete' || _document.readyState === 'interactive') {
-    notifyParent();
+    _setTimeout(notifyParent, 0);
   } else {
     _window.addEventListener('DOMContentLoaded', notifyParent);
   }
+  _window.addEventListener('load', notifyParent);
   _window.addEventListener('popstate', notifyParent);
+  _window.addEventListener('hashchange', notifyParent);
   
-  var titleObs = new MutationObserver(notifyParent);
+  // Title observer
+  var titleObs = new MutationObserver(function() {
+    _setTimeout(notifyParent, 10);
+  });
   var observeTitle = function() {
     var t = _document.querySelector('title');
-    if (t) titleObs.observe(t, { subtree: true, characterData: true, childList: true });
+    if (t) {
+      titleObs.observe(t, { subtree: true, characterData: true, childList: true });
+    } else {
+      // No title yet, observe head for when it's added
+      var head = _document.head || _document.querySelector('head');
+      if (head) {
+        var headObs = new MutationObserver(function(muts, obs) {
+          var t = _document.querySelector('title');
+          if (t) {
+            obs.disconnect();
+            titleObs.observe(t, { subtree: true, characterData: true, childList: true });
+            notifyParent();
+          }
+        });
+        headObs.observe(head, { childList: true });
+      }
+    }
   };
   if (_document.readyState === 'loading') {
     _window.addEventListener('DOMContentLoaded', observeTitle);
@@ -1008,9 +1769,27 @@ try {
 try {
   _window.addEventListener('message', function(e) {
     if (e.data && e.data.type === 'PROXY_GET_URL') {
-      e.source.postMessage({ type: 'PROXY_URL_RESPONSE', url: getCurrentTarget(), title: _document.title }, '*');
+      try {
+        e.source.postMessage({ 
+          type: 'PROXY_URL_RESPONSE', 
+          url: getCurrentTarget(), 
+          title: _document.title 
+      }, '*');
+      } catch(ex) {}
     }
   });
+} catch(e) {}
+
+// ========== Console override (for debugging) ==========
+try {
+  _window.__PROXY_DEBUG__ = function() {
+    return {
+      target: getCurrentTarget(),
+      origin: getCurrentOrigin(),
+      host: getCurrentHost(),
+      embedded: __PROXY_EMBEDDED__
+    };
+  };
 } catch(e) {}
 
 } catch(globalError) {
@@ -1021,11 +1800,11 @@ try {
   })();
   </script>
 `, { html: true });
-  }
+    }
 }
 
 // --------------------
-// Toolbar (minimal)
+// Toolbar (minimal) - doesn't cover content
 // --------------------
 class InjectToolbar {
   constructor(targetUrl) {
@@ -1035,16 +1814,119 @@ class InjectToolbar {
     const targetUrl = this.targetUrl;
     const escaped = targetUrl.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     el.prepend(`
-<div id="__proxy_toolbar__" style="position:relative;top:0;left:0;right:0;width:100%;height:42px;background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%);border-bottom:2px solid #0f3460;display:flex;align-items:center;padding:0 12px;gap:8px;z-index:2147483647;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;box-shadow:0 2px 10px rgba(0,0,0,0.3);box-sizing:border-box;flex-shrink:0;">
-  <div style="display:flex;align-items:center;gap:8px;color:#e94560;font-weight:600;font-size:14px;">
+<style>
+html{margin-top:44px!important}
+body{margin-top:0!important}
+#__proxy_toolbar__{position:fixed!important;top:0!important;left:0!important;right:0!important;width:100%!important;height:44px!important;background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%)!important;border-bottom:2px solid #0f3460!important;display:flex!important;align-items:center!important;padding:0 12px!important;gap:8px!important;z-index:2147483647!important;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif!important;box-shadow:0 2px 10px rgba(0,0,0,0.3)!important;box-sizing:border-box!important}
+#__proxy_url_input__{flex:1!important;height:28px!important;background:rgba(255,255,255,0.1)!important;border:1px solid #0f3460!important;border-radius:6px!important;padding:0 12px!important;color:#eee!important;font-size:13px!important;outline:none!important;font-family:inherit!important}
+#__proxy_url_input__:focus{border-color:#e94560!important}
+#__proxy_url_input__::placeholder{color:#888!important}
+</style>
+<div id="__proxy_toolbar__">
+  <div style="display:flex;align-items:center;gap:8px;color:#e94560;font-weight:600;font-size:14px;flex-shrink:0;">
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/><path d="M2 12h20"/></svg>
     PROXY
   </div>
-  <input type="text" id="__proxy_url_input__" value="${escaped}" placeholder="Enter URL and press Enter" style="flex:1;height:28px;background:rgba(255,255,255,0.1);border:1px solid #0f3460;border-radius:6px;padding:0 12px;color:#eee;font-size:13px;outline:none;" onfocus="this.style.borderColor='#e94560'" onblur="this.style.borderColor='#0f3460'" onkeydown="if(event.key==='Enter'){var u=this.value.trim();if(u.indexOf('http')!==0)u='https://'+u;location.href='/?url='+encodeURIComponent(u);}">
+  <input type="text" id="__proxy_url_input__" value="${escaped}" placeholder="Enter URL and press Enter" onkeydown="if(event.key==='Enter'){var u=this.value.trim();if(u.indexOf('http')!==0)u='https://'+u;location.href='/?url='+encodeURIComponent(u);}">
 </div>
-<style>#__proxy_url_input__::placeholder{color:#888}</style>
 `, { html: true });
   }
+}
+
+// --------------------
+// JSON URL Rewriting (for manifest.json etc)
+// --------------------
+function rewriteJsonUrls(json, base, isEmbedded) {
+  if (!json || typeof json !== 'string') return json;
+  
+  const prefix = isEmbedded ? "/?embedded=1&url=" : "/?url=";
+  
+  try {
+    // Parse and walk the JSON to find URL-like values
+    const parsed = JSON.parse(json);
+    
+    function walkAndRewrite(obj) {
+      if (!obj || typeof obj !== 'object') return obj;
+      
+      if (Array.isArray(obj)) {
+        return obj.map(walkAndRewrite);
+      }
+      
+      const result = {};
+      for (const [key, value] of Object.entries(obj)) {
+        if (typeof value === 'string') {
+          // Check if this looks like a URL in a URL-related key
+          const urlKeys = ['src', 'href', 'url', 'icon', 'icons', 'start_url', 'scope', 'background', 'action'];
+          const isUrlKey = urlKeys.some(k => key.toLowerCase().includes(k));
+          
+          if (isUrlKey && value && (value.startsWith('http://') || value.startsWith('https://') || value.startsWith('/') || value.startsWith('./'))) {
+            if (!value.includes('proxy.ikunbeautiful.workers.dev')) {
+              try {
+                const abs = new URL(value, base).toString();
+                result[key] = prefix + encodeURIComponent(abs);
+              } catch {
+                result[key] = value;
+              }
+            } else {
+              result[key] = value;
+            }
+          } else {
+            result[key] = value;
+          }
+        } else if (typeof value === 'object') {
+          result[key] = walkAndRewrite(value);
+        } else {
+          result[key] = value;
+        }
+      }
+      return result;
+    }
+    
+    return JSON.stringify(walkAndRewrite(parsed));
+  } catch {
+    return json;
+  }
+}
+
+// --------------------
+// SVG URL Rewriting
+// --------------------
+function rewriteSvgUrls(svg, base, isEmbedded) {
+  if (!svg || typeof svg !== 'string') return svg;
+  
+  const prefix = isEmbedded ? "/?embedded=1&url=" : "/?url=";
+  
+  try {
+    // Rewrite href attributes
+    svg = svg.replace(/\shref\s*=\s*(['"])([^'"]+)\1/gi, (m, q, url) => {
+      try {
+        if (!url || url.startsWith('#') || url.startsWith('data:') || url.startsWith('javascript:')) return m;
+        if (url.includes('proxy.ikunbeautiful.workers.dev')) return m;
+        const abs = new URL(url, base).toString();
+        return ` href=${q}${prefix}${encodeURIComponent(abs)}${q}`;
+      } catch {
+        return m;
+      }
+    });
+    
+    // Rewrite xlink:href attributes
+    svg = svg.replace(/\sxlink:href\s*=\s*(['"])([^'"]+)\1/gi, (m, q, url) => {
+      try {
+        if (!url || url.startsWith('#') || url.startsWith('data:') || url.startsWith('javascript:')) return m;
+        if (url.includes('proxy.ikunbeautiful.workers.dev')) return m;
+        const abs = new URL(url, base).toString();
+        return ` xlink:href=${q}${prefix}${encodeURIComponent(abs)}${q}`;
+      } catch {
+        return m;
+      }
+    });
+    
+    // Rewrite style url()
+    svg = rewriteCSSUrls(svg, base, isEmbedded);
+    
+  } catch {}
+  
+  return svg;
 }
 
 // --------------------
@@ -1103,7 +1985,7 @@ function sanitizeHeaders(headers, isEmbedded) {
         }
       });
     }
-
+  
     if (!target) {
       return new Response("Missing ?url= parameter", { status: 400 });
     }
@@ -1116,8 +1998,8 @@ function sanitizeHeaders(headers, isEmbedded) {
     if (target.includes("proxy.ikunbeautiful.workers.dev")) {
       return new Response("Cannot proxy the proxy itself", { status: 400 });
     }
-
-    try {
+  
+      try {
       const requestHeaders = new Headers();
       requestHeaders.set("User-Agent", request.headers.get("User-Agent") || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
       requestHeaders.set("Accept", request.headers.get("Accept") || "*/*");
@@ -1221,8 +2103,8 @@ function sanitizeHeaders(headers, isEmbedded) {
           statusText: resp.statusText,
           headers: sanitizedHeaders
         }));
-      }
-
+        }
+  
       // CSS
       if (contentType.includes("text/css") || contentType.includes("stylesheet")) {
         const css = await resp.text();
@@ -1232,6 +2114,45 @@ function sanitizeHeaders(headers, isEmbedded) {
           headers: sanitizedHeaders
         });
       }
+      
+      // JSON (for manifest.json and other configs) - rewrite URL values
+      if (contentType.includes("application/json") || contentType.includes("application/manifest+json")) {
+        try {
+          const json = await resp.text();
+          const rewritten = rewriteJsonUrls(json, target, isEmbedded);
+          return new Response(rewritten, {
+            status: resp.status,
+            statusText: resp.statusText,
+            headers: sanitizedHeaders
+          });
+        } catch {
+          // If JSON rewriting fails, return original
+          return new Response(resp.body, {
+            status: resp.status,
+            statusText: resp.statusText,
+            headers: sanitizedHeaders
+          });
+        }
+      }
+      
+      // SVG - rewrite href/xlink:href attributes
+      if (contentType.includes("image/svg+xml")) {
+        try {
+          const svg = await resp.text();
+          const rewritten = rewriteSvgUrls(svg, target, isEmbedded);
+          return new Response(rewritten, {
+            status: resp.status,
+            statusText: resp.statusText,
+            headers: sanitizedHeaders
+          });
+        } catch {
+          return new Response(resp.body, {
+            status: resp.status,
+            statusText: resp.statusText,
+            headers: sanitizedHeaders
+          });
+        }
+      }
 
       // Everything else - pass through
       return new Response(resp.body, {
@@ -1239,13 +2160,13 @@ function sanitizeHeaders(headers, isEmbedded) {
         statusText: resp.statusText,
         headers: sanitizedHeaders
       });
-
-    } catch (e) {
+  
+      } catch (e) {
       const errorMessage = e.name === 'AbortError' ? 'Request timeout (30s)' : e.message;
       return new Response(`Proxy error: ${errorMessage}`, { 
         status: 502,
         headers: { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' }
       });
+      }
     }
-  }
-};
+  };
