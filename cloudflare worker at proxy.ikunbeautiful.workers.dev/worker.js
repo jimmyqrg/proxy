@@ -175,6 +175,9 @@ class LinkRewriter extends SafeRewriter {
     element(el) {
     this.safeRewrite(el, "href");
     
+    // Also handle src attribute (non-standard but sometimes used for stylesheets)
+    this.safeRewrite(el, "src");
+    
     // Also handle imagesrcset attribute on link elements
     try {
       const srcset = el.getAttribute("imagesrcset");
@@ -639,6 +642,11 @@ var _Promise = Promise;
 var _Reflect = typeof Reflect !== 'undefined' ? Reflect : null;
 var _Proxy = typeof Proxy !== 'undefined' ? Proxy : null;
 
+// Store REAL location properties BEFORE we override them
+var _realLocationHref = _location.href;
+var _realLocationSearch = _location.search;
+var _realLocationPathname = _location.pathname;
+
 // ========== SAFE UTILITIES ==========
 function safeStr(v) {
   try {
@@ -650,7 +658,53 @@ function safeStr(v) {
 
 function getCurrentTarget() {
   try {
-    var params = new URLSearchParams(_location.search);
+    // Read from the REAL location search, not our overridden one
+    // Try multiple methods to get the actual proxy URL's search parameter
+    var search = '';
+    try {
+      // Method 1: Try to access the real location through the prototype
+      var realLoc = _Object.getOwnPropertyDescriptor(_Object.getPrototypeOf(_window), 'location');
+      if (realLoc && realLoc.get) {
+        var realLocation = realLoc.get.call(_window);
+        search = realLocation.search;
+      }
+    } catch(e) {}
+    
+    // Method 2: If that failed, try reading from the actual href and parsing
+    if (!search) {
+      try {
+        var currentHref = _location.href;
+        // If href was overridden, try to get it from the actual location
+        try {
+          var protoLoc = _Object.getOwnPropertyDescriptor(_Object.getPrototypeOf(_window), 'location');
+          if (protoLoc && protoLoc.get) {
+            currentHref = protoLoc.get.call(_window).href;
+          }
+        } catch(e) {
+          // Fallback: use stored real location href
+          currentHref = _realLocationHref;
+        }
+        var urlObj = new _URL(currentHref);
+        search = urlObj.search;
+      } catch(e) {
+        // Last resort: use stored real search
+        search = _realLocationSearch;
+      }
+    }
+    
+    // Method 3: Update stored values from actual location (for subsequent calls)
+    try {
+      var protoLoc = _Object.getOwnPropertyDescriptor(_Object.getPrototypeOf(_window), 'location');
+      if (protoLoc && protoLoc.get) {
+        var realLoc = protoLoc.get.call(_window);
+        _realLocationHref = realLoc.href;
+        _realLocationSearch = realLoc.search;
+        _realLocationPathname = realLoc.pathname;
+        search = realLoc.search;
+      }
+    } catch(e) {}
+    
+    var params = new URLSearchParams(search);
     var url = params.get('url');
     if (url) {
       // Handle double-encoded URLs
@@ -687,16 +741,18 @@ function getCurrentHost() {
 function isSpecial(url) {
   if (!url) return true;
   var l = safeStr(url).toLowerCase().trim();
-  return l === '#' || l === '' || 
-         l.indexOf('javascript:') === 0 || 
-         l.indexOf('data:') === 0 || 
-         l.indexOf('blob:') === 0 ||
-         l.indexOf('mailto:') === 0 ||
-         l.indexOf('tel:') === 0 ||
-         l.indexOf('sms:') === 0 ||
-         l.indexOf('about:') === 0 ||
-         l.indexOf('wss:') === 0 ||
-         l.indexOf('ws:') === 0;
+  // Only skip truly special URLs - be more permissive for relative paths
+  if (l === '#' || l === '') return true;
+  if (l.indexOf('javascript:') === 0) return true;
+  if (l.indexOf('data:') === 0) return true;
+  if (l.indexOf('blob:') === 0) return true;
+  if (l.indexOf('mailto:') === 0) return true;
+  if (l.indexOf('tel:') === 0) return true;
+  if (l.indexOf('sms:') === 0) return true;
+  if (l.indexOf('about:') === 0) return true;
+  // WebSocket URLs should be handled differently but not skipped
+  // if (l.indexOf('wss:') === 0 || l.indexOf('ws:') === 0) return true;
+  return false;
 }
 
 function isProxied(url) {
@@ -777,6 +833,32 @@ _window.__proxyResolve__ = resolveUrl;
 _window.__proxyGetTarget__ = getCurrentTarget;
 _window.__PROXY_TARGET_URL__ = __PROXY_TARGET__;
 _window.__PROXY_EMBEDDED__ = __PROXY_EMBEDDED__;
+_window.__proxyIsSpecial__ = isSpecial;
+_window.__proxyIsProxied__ = isProxied;
+
+// ========== Handle direct window/location assignment ==========
+// Override the setter for window.location
+try {
+  var windowLocationDesc = _Object.getOwnPropertyDescriptor(_window, 'location') ||
+                           _Object.getOwnPropertyDescriptor(_Object.getPrototypeOf(_window), 'location');
+  if (windowLocationDesc) {
+    _Object.defineProperty(_window, 'location', {
+      get: function() { return _location; },
+      set: function(v) { 
+        try { 
+          v = safeStr(v);
+          if (v && !isSpecial(v) && !isProxied(v)) {
+            v = proxify(v);
+          }
+          _location.href = v;
+        } catch(e) {
+          _location.href = v;
+        }
+      },
+      configurable: true
+    });
+  }
+} catch(e) {}
 
 // ========== ANTI-IFRAME-BUSTER (COMPREHENSIVE) ==========
 try {
@@ -854,7 +936,26 @@ try {
   // Override all location properties
   try {
     _Object.defineProperty(_location, 'href', {
-      set: function(u) { _assign(proxify(u)); },
+      set: function(u) { 
+        try {
+          var proxied = proxify(u);
+          _assign(proxied);
+          // Update stored real location values after navigation
+          _setTimeout(function() {
+            try {
+              var protoLoc = _Object.getOwnPropertyDescriptor(_Object.getPrototypeOf(_window), 'location');
+              if (protoLoc && protoLoc.get) {
+                var realLoc = protoLoc.get.call(_window);
+                _realLocationHref = realLoc.href;
+                _realLocationSearch = realLoc.search;
+                _realLocationPathname = realLoc.pathname;
+              }
+            } catch(e) {}
+          }, 0);
+        } catch(e) {
+          _assign(u);
+        }
+      },
       get: function() { return getCurrentTarget(); },
       configurable: true
     });
@@ -969,20 +1070,85 @@ try {
     _location.valueOf = function() { return getCurrentTarget(); };
   } catch(e) {}
   
+  // Override reload to work correctly
+  try {
+    _location.reload = function(forceReload) { 
+      try {
+        return _reload(forceReload);
+      } catch(e) {
+        _window.location = getCurrentTarget();
+      }
+    };
+  } catch(e) {}
+  
+  // Override Symbol.toPrimitive if available
+  try {
+    if (typeof Symbol !== 'undefined' && Symbol.toPrimitive) {
+      _Object.defineProperty(_location, Symbol.toPrimitive, {
+        value: function(hint) {
+          if (hint === 'number') return NaN;
+          return getCurrentTarget();
+        },
+        configurable: true
+      });
+    }
+  } catch(e) {}
+  
+} catch(e) {}
+
+// ========== document.location (same as window.location) ==========
+try {
+  _Object.defineProperty(_document, 'location', {
+    get: function() { return _location; },
+    set: function(v) { _location.href = v; },
+    configurable: true
+  });
 } catch(e) {}
 
 // ========== HISTORY OVERRIDES ==========
 try {
   var _pushState = _history.pushState.bind(_history);
   var _replaceState = _history.replaceState.bind(_history);
+  var _go = _history.go ? _history.go.bind(_history) : function(){};
+  var _back = _history.back ? _history.back.bind(_history) : function(){};
+  var _forward = _history.forward ? _history.forward.bind(_history) : function(){};
   
   _history.pushState = function(s, t, u) { 
     try { if (u) u = proxify(u); } catch(e) {}
-    return _pushState(s, t, u);
+    try {
+      var result = _pushState(s, t, u);
+      notifyParent();
+      return result;
+    } catch(e) {
+      return _pushState(s, t, u);
+    }
   };
   _history.replaceState = function(s, t, u) {
     try { if (u) u = proxify(u); } catch(e) {}
-    return _replaceState(s, t, u);
+    try {
+      var result = _replaceState(s, t, u);
+      notifyParent();
+      return result;
+    } catch(e) {
+      return _replaceState(s, t, u);
+    }
+  };
+  
+  // Override history.go/back/forward to notify parent
+  _history.go = function(n) {
+    var result = _go(n);
+    _setTimeout(notifyParent, 100);
+    return result;
+  };
+  _history.back = function() {
+    var result = _back();
+    _setTimeout(notifyParent, 100);
+    return result;
+  };
+  _history.forward = function() {
+    var result = _forward();
+    _setTimeout(notifyParent, 100);
+    return result;
   };
 } catch(e) {}
 
@@ -1045,11 +1211,17 @@ try {
   Element.prototype.setAttribute = function(name, value) {
     try {
       var n = safeStr(name).toLowerCase();
-      if ((n === 'src' || n === 'href' || n === 'action' || n === 'data' || n === 'poster' || n === 'formaction' || n === 'xlink:href') && value) {
+      // URL attributes
+      if ((n === 'src' || n === 'href' || n === 'action' || n === 'data' || n === 'poster' || 
+           n === 'formaction' || n === 'xlink:href' || n === 'ping' || n === 'longdesc' ||
+           n === 'usemap' || n === 'codebase' || n === 'cite' || n === 'background' ||
+           n === 'manifest' || n === 'icon') && value) {
         if (!isSpecial(value) && !isProxied(value)) {
           value = proxify(value);
         }
-      } else if (n === 'srcset' && value) {
+      } 
+      // Srcset attribute
+      else if (n === 'srcset' && value) {
         value = safeStr(value).split(',').map(function(s) {
           var parts = s.trim().split(/\\s+/);
           if (parts[0] && !isSpecial(parts[0]) && !isProxied(parts[0])) {
@@ -1058,9 +1230,77 @@ try {
           return parts.join(' ');
         }).join(', ');
       }
+      // data-* URL attributes
+      else if (n.indexOf('data-') === 0 && value) {
+        var urlDataAttrs = ['data-src', 'data-href', 'data-url', 'data-background', 'data-poster',
+                           'data-image', 'data-thumb', 'data-full', 'data-lazy', 'data-lazy-src',
+                           'data-original', 'data-bg', 'data-video', 'data-audio', 'data-link',
+                           'data-source', 'data-load'];
+        if (urlDataAttrs.indexOf(n) !== -1) {
+          if (!isSpecial(value) && !isProxied(value)) {
+            value = proxify(value);
+          }
+        }
+      }
+      // Style attribute with url()
+      else if (n === 'style' && value && value.indexOf('url(') !== -1) {
+        value = rewriteCssUrls(value);
+      }
     } catch(e) {}
     return _setAttribute.call(this, name, value);
   };
+} catch(e) {}
+
+// ========== ELEMENT setAttributeNS (for SVG xlink:href etc) ==========
+try {
+  var _setAttributeNS = Element.prototype.setAttributeNS;
+  Element.prototype.setAttributeNS = function(ns, name, value) {
+    try {
+      var localName = name.indexOf(':') !== -1 ? name.split(':')[1] : name;
+      if ((localName === 'href' || name === 'xlink:href') && value) {
+        if (!isSpecial(value) && !isProxied(value)) {
+          value = proxify(value);
+        }
+      }
+    } catch(e) {}
+    return _setAttributeNS.call(this, ns, name, value);
+  };
+} catch(e) {}
+
+// ========== setAttributeNode / setAttributeNodeNS ==========
+try {
+  var _setAttributeNode = Element.prototype.setAttributeNode;
+  Element.prototype.setAttributeNode = function(attr) {
+    try {
+      var name = attr.name.toLowerCase();
+      var value = attr.value;
+      if ((name === 'src' || name === 'href' || name === 'action' || name === 'data' || 
+           name === 'poster' || name === 'formaction') && value) {
+        if (!isSpecial(value) && !isProxied(value)) {
+          attr.value = proxify(value);
+        }
+      }
+    } catch(e) {}
+    return _setAttributeNode.call(this, attr);
+  };
+} catch(e) {}
+
+try {
+  var _setAttributeNodeNS = Element.prototype.setAttributeNodeNS;
+  if (_setAttributeNodeNS) {
+    Element.prototype.setAttributeNodeNS = function(attr) {
+      try {
+        var localName = attr.localName || attr.name;
+        var value = attr.value;
+        if (localName === 'href' && value) {
+          if (!isSpecial(value) && !isProxied(value)) {
+            attr.value = proxify(value);
+          }
+        }
+      } catch(e) {}
+      return _setAttributeNodeNS.call(this, attr);
+    };
+  }
 } catch(e) {}
 
 // ========== ELEMENT getAttribute override for location-checking scripts ==========
@@ -1223,6 +1463,31 @@ try {
   }
 } catch(e) {}
 
+// ========== URL Constructor Override ==========
+// Handle new URL(path, base) where base might be location or document.URL
+try {
+  var _URLConstructor = _URL;
+  _window.URL = function(url, base) {
+    // If base is location-like, use the target URL
+    if (base === _location || base === _document.URL || base === _document.baseURI ||
+        (typeof base === 'string' && base.indexOf('proxy.ikunbeautiful.workers.dev') !== -1)) {
+      base = getCurrentTarget();
+    }
+    // If base is a URL object that's proxied, extract the real URL
+    if (base && typeof base === 'object' && base.href && base.href.indexOf('/?url=') !== -1) {
+      try {
+        var match = base.href.match(/[?&]url=([^&]+)/);
+        if (match) base = _decodeURIComponent(match[1]);
+      } catch(e) {}
+    }
+    return new _URLConstructor(url, base);
+  };
+  _window.URL.prototype = _URLConstructor.prototype;
+  _window.URL.createObjectURL = _URLConstructor.createObjectURL ? _URLConstructor.createObjectURL.bind(_URLConstructor) : function(){};
+  _window.URL.revokeObjectURL = _URLConstructor.revokeObjectURL ? _URLConstructor.revokeObjectURL.bind(_URLConstructor) : function(){};
+  _window.URL.canParse = _URLConstructor.canParse ? _URLConstructor.canParse.bind(_URLConstructor) : undefined;
+} catch(e) {}
+
 // ========== FETCH ==========
 try {
   var _fetch = _window.fetch ? _window.fetch.bind(_window) : null;
@@ -1232,6 +1497,12 @@ try {
         if (typeof input === 'string') {
           if (!isSpecial(input) && !isProxied(input)) {
             input = proxify(input);
+          }
+        } else if (input && input instanceof _URL) {
+          // URL object
+          var urlStr = input.href;
+          if (!isSpecial(urlStr) && !isProxied(urlStr)) {
+            input = proxify(urlStr);
           }
         } else if (input && typeof input === 'object') {
           if (input.url && !isSpecial(input.url) && !isProxied(input.url)) {
@@ -1253,13 +1524,95 @@ try {
 try {
   var _XHROpen = XMLHttpRequest.prototype.open;
   XMLHttpRequest.prototype.open = function(method, url, async, user, pass) {
-    try { 
+    // Store original URL for responseURL spoofing
+    try {
+      this.__originalUrl__ = url;
       if (url && !isSpecial(url) && !isProxied(url)) {
         url = proxify(url); 
       }
     } catch(e) {}
     return _XHROpen.call(this, method, url, async !== false, user, pass);
   };
+  
+  // Override responseURL to return original URL
+  try {
+    var respUrlDesc = _Object.getOwnPropertyDescriptor(XMLHttpRequest.prototype, 'responseURL');
+    if (respUrlDesc && respUrlDesc.get) {
+      _Object.defineProperty(XMLHttpRequest.prototype, 'responseURL', {
+        get: function() {
+          if (this.__originalUrl__) {
+            return resolveUrl(this.__originalUrl__);
+          }
+          return respUrlDesc.get.call(this);
+        },
+        configurable: true
+      });
+    }
+  } catch(e) {}
+} catch(e) {}
+
+// ========== HTMLInputElement/HTMLButtonElement formAction ==========
+try {
+  ['HTMLInputElement', 'HTMLButtonElement'].forEach(function(name) {
+    try {
+      var El = _window[name];
+      if (!El || !El.prototype) return;
+      var desc = _Object.getOwnPropertyDescriptor(El.prototype, 'formAction');
+      if (desc && desc.set) {
+        var _set = desc.set;
+        var _get = desc.get;
+        _Object.defineProperty(El.prototype, 'formAction', {
+          set: function(v) {
+            try {
+              if (v && !isSpecial(v) && !isProxied(v)) {
+                v = proxify(v);
+              }
+            } catch(e) {}
+            _set.call(this, v);
+          },
+          get: _get,
+          configurable: true
+        });
+      }
+    } catch(e) {}
+  });
+} catch(e) {}
+
+// ========== Form submit() method ==========
+try {
+  var _formSubmit = HTMLFormElement.prototype.submit;
+  HTMLFormElement.prototype.submit = function() {
+    try {
+      var action = this.getAttribute('action');
+      if (!action || (!isProxied(action) && !isSpecial(action))) {
+        _setAttribute.call(this, 'action', proxify(action || getCurrentTarget()));
+      }
+    } catch(e) {}
+    return _formSubmit.call(this);
+  };
+} catch(e) {}
+
+// ========== Form requestSubmit() method ==========
+try {
+  if (HTMLFormElement.prototype.requestSubmit) {
+    var _requestSubmit = HTMLFormElement.prototype.requestSubmit;
+    HTMLFormElement.prototype.requestSubmit = function(submitter) {
+      try {
+        var action = this.getAttribute('action');
+        if (!action || (!isProxied(action) && !isSpecial(action))) {
+          _setAttribute.call(this, 'action', proxify(action || getCurrentTarget()));
+        }
+        // Check submitter formAction
+        if (submitter && submitter.formAction) {
+          var fa = submitter.getAttribute('formaction');
+          if (fa && !isProxied(fa) && !isSpecial(fa)) {
+            _setAttribute.call(submitter, 'formaction', proxify(fa));
+          }
+        }
+      } catch(e) {}
+      return _requestSubmit.call(this, submitter);
+    };
+  }
 } catch(e) {}
 
 // ========== WebSocket ==========
@@ -1267,9 +1620,47 @@ try {
   if (_window.WebSocket) {
     var _WebSocket = _window.WebSocket;
     _window.WebSocket = function(url, protocols) {
-      // WebSockets can't be proxied through HTTP proxy
-      // Just let them through - they'll either work or fail
-      return new _WebSocket(url, protocols);
+      try {
+        // Resolve relative WebSocket URLs against current target
+        var resolvedWsUrl = safeStr(url).trim();
+        if (resolvedWsUrl && !isSpecial(resolvedWsUrl)) {
+          // Handle protocol-relative
+          if (resolvedWsUrl.indexOf('//') === 0) {
+            resolvedWsUrl = 'wss:' + resolvedWsUrl;
+          }
+          // Handle relative paths
+          if (resolvedWsUrl.indexOf('ws://') !== 0 && resolvedWsUrl.indexOf('wss://') !== 0 &&
+              resolvedWsUrl.indexOf('http://') !== 0 && resolvedWsUrl.indexOf('https://') !== 0) {
+            // Resolve against target
+            var base = getCurrentTarget();
+            try {
+              resolvedWsUrl = new _URL(resolvedWsUrl, base).href;
+            } catch(e) {
+              resolvedWsUrl = getCurrentOrigin() + (resolvedWsUrl.indexOf('/') === 0 ? '' : '/') + resolvedWsUrl;
+            }
+          }
+          // Convert http(s) to ws(s) if needed
+          if (resolvedWsUrl.indexOf('http://') === 0) {
+            resolvedWsUrl = 'ws://' + resolvedWsUrl.slice(7);
+          } else if (resolvedWsUrl.indexOf('https://') === 0) {
+            resolvedWsUrl = 'wss://' + resolvedWsUrl.slice(8);
+          }
+          // Route through proxy WebSocket endpoint
+          var proxyWsProtocol = _realLocationHref.indexOf('https://') === 0 ? 'wss://' : 'ws://';
+          var proxyHost = _realLocationHref.split('/')[2]; // e.g. proxy.ikunbeautiful.workers.dev
+          var proxyWsUrl = proxyWsProtocol + proxyHost + '/?ws=' + _encodeURIComponent(resolvedWsUrl);
+          if (protocols !== undefined) {
+            return new _WebSocket(proxyWsUrl, protocols);
+          }
+          return new _WebSocket(proxyWsUrl);
+        }
+      } catch(e) {
+        // Fallback to direct connection
+      }
+      if (protocols !== undefined) {
+        return new _WebSocket(url, protocols);
+      }
+      return new _WebSocket(url);
     };
     _window.WebSocket.prototype = _WebSocket.prototype;
     _window.WebSocket.CONNECTING = _WebSocket.CONNECTING;
@@ -1364,10 +1755,25 @@ try {
 try {
   var _Image = _window.Image;
   _window.Image = function(w, h) { 
-    var img = new _Image(w, h);
-    return img;
-  };
+    var img = w !== undefined ? (h !== undefined ? new _Image(w, h) : new _Image(w)) : new _Image();
+    // src is handled by property override
+      return img;
+    };
   _window.Image.prototype = _Image.prototype;
+} catch(e) {}
+
+// ========== Audio constructor ==========
+try {
+  if (_window.Audio) {
+    var _Audio = _window.Audio;
+    _window.Audio = function(src) {
+      if (src && !isSpecial(src) && !isProxied(src)) {
+        src = proxify(src);
+      }
+      return src ? new _Audio(src) : new _Audio();
+    };
+    _window.Audio.prototype = _Audio.prototype;
+  }
 } catch(e) {}
 
 // ========== Audio Constructor ==========
@@ -1405,8 +1811,104 @@ try {
   }
 } catch(e) {}
 
-// ========== Dynamic import() ==========
-// Can't easily override, but we intercept script[type=module] src
+// ========== Worklets (AudioWorklet, PaintWorklet, AnimationWorklet) ==========
+try {
+  ['audioWorklet', 'paintWorklet', 'animationWorklet'].forEach(function(workletName) {
+    try {
+      var worklet = navigator[workletName] || (CSS && CSS[workletName]);
+      if (worklet && worklet.addModule) {
+        var _addModule = worklet.addModule.bind(worklet);
+        worklet.addModule = function(url, options) {
+          try {
+            if (url && !isSpecial(url) && !isProxied(url)) {
+              url = proxify(url, false);
+            }
+          } catch(e) {}
+          return _addModule(url, options);
+        };
+      }
+    } catch(e) {}
+  });
+} catch(e) {}
+
+// ========== import.meta.url spoofing ==========
+// Can't directly override import.meta, but we expose a helper
+try {
+  _window.__getImportMetaUrl__ = function() {
+    return getCurrentTarget();
+  };
+} catch(e) {}
+
+// ========== Handle import maps (type="importmap") ==========
+// Import maps are handled at the script element level by our MutationObserver
+
+// ========== Handle location being accessed via bracket notation ==========
+// e.g., window["location"], this["location"]
+try {
+  var windowProxy = new _Proxy(_window, {
+    get: function(target, prop) {
+      if (prop === 'location') return _location;
+      return target[prop];
+    },
+    set: function(target, prop, value) {
+      if (prop === 'location') {
+        _location.href = safeStr(value);
+        return true;
+      }
+      target[prop] = value;
+      return true;
+    }
+  });
+  // Can't replace window, but the handler ensures window.location is our patched version
+} catch(e) {}
+
+// ========== JSON.stringify on location should return target URL ==========
+try {
+  _location.toJSON = function() { 
+    try {
+      var u = new _URL(getCurrentTarget());
+      return {
+        href: u.href,
+        origin: u.origin,
+        protocol: u.protocol,
+        host: u.host,
+        hostname: u.hostname,
+        port: u.port,
+        pathname: u.pathname,
+        search: u.search,
+        hash: u.hash
+      };
+    } catch(e) {
+      return getCurrentTarget();
+    }
+  };
+} catch(e) {}
+
+// ========== Handle location being spread or Object.assign'd ==========
+try {
+  if (_Object.assign) {
+    var _assign_orig = _Object.assign;
+    _Object.assign = function(target, ...sources) {
+      // Check if any source is location
+      var modifiedSources = sources.map(function(src) {
+        if (src === _location) {
+          return _location.toJSON ? _location.toJSON() : { href: getCurrentTarget() };
+        }
+        return src;
+      });
+      return _assign_orig(target, ...modifiedSources);
+    };
+  }
+} catch(e) {}
+
+// ========== Object.keys/values/entries on location ==========
+try {
+  var locationKeys = ['href', 'origin', 'protocol', 'host', 'hostname', 'port', 'pathname', 'search', 'hash', 'assign', 'replace', 'reload', 'toString'];
+  // These should work via our property overrides
+} catch(e) {}
+
+// ========== Dynamic import() via Function ==========
+// Can't easily override import(), but handle what we can
 
 // ========== CSS insertRule/addRule ==========
 try {
@@ -1418,6 +1920,226 @@ try {
       } catch(e) {}
       return _insertRule.call(this, rule, index);
     };
+  }
+  if (CSSStyleSheet && CSSStyleSheet.prototype.addRule) {
+    var _addRule = CSSStyleSheet.prototype.addRule;
+    CSSStyleSheet.prototype.addRule = function(selector, style, index) {
+      try {
+        style = rewriteCssUrls(style);
+      } catch(e) {}
+      return _addRule.call(this, selector, style, index);
+    };
+  }
+} catch(e) {}
+
+// ========== CSSStyleDeclaration.setProperty ==========
+try {
+  var _setProperty = CSSStyleDeclaration.prototype.setProperty;
+  CSSStyleDeclaration.prototype.setProperty = function(name, value, priority) {
+    try {
+      if (value && typeof value === 'string' && value.indexOf('url(') !== -1) {
+        value = rewriteCssUrls(value);
+      }
+    } catch(e) {}
+    return _setProperty.call(this, name, value, priority);
+  };
+} catch(e) {}
+
+// ========== CSSStyleDeclaration property setters ==========
+try {
+  var cssUrlProps = ['background', 'backgroundImage', 'borderImage', 'borderImageSource',
+                     'listStyle', 'listStyleImage', 'cursor', 'content',
+                     'maskImage', 'mask', 'clipPath', 'filter', 'src'];
+  cssUrlProps.forEach(function(prop) {
+    try {
+      var desc = _Object.getOwnPropertyDescriptor(CSSStyleDeclaration.prototype, prop);
+      if (desc && desc.set) {
+        var _set = desc.set;
+        _Object.defineProperty(CSSStyleDeclaration.prototype, prop, {
+          set: function(v) {
+            try {
+              if (v && typeof v === 'string' && v.indexOf('url(') !== -1) {
+                v = rewriteCssUrls(v);
+              }
+            } catch(e) {}
+            _set.call(this, v);
+          },
+          get: desc.get,
+          configurable: true
+        });
+      }
+    } catch(e) {}
+  });
+} catch(e) {}
+
+// ========== Constructable Stylesheets ==========
+try {
+  if (_window.CSSStyleSheet) {
+    var _CSSStyleSheet = _window.CSSStyleSheet;
+    // Replace/replaceSync for constructable stylesheets
+    if (CSSStyleSheet.prototype.replace) {
+      var _replace_css = CSSStyleSheet.prototype.replace;
+      CSSStyleSheet.prototype.replace = function(text) {
+        try { text = rewriteCssUrls(text); } catch(e) {}
+        return _replace_css.call(this, text);
+      };
+    }
+    if (CSSStyleSheet.prototype.replaceSync) {
+      var _replaceSync = CSSStyleSheet.prototype.replaceSync;
+      CSSStyleSheet.prototype.replaceSync = function(text) {
+        try { text = rewriteCssUrls(text); } catch(e) {}
+        return _replaceSync.call(this, text);
+      };
+    }
+  }
+} catch(e) {}
+
+// ========== adoptedStyleSheets ==========
+try {
+  var adoptedDesc = _Object.getOwnPropertyDescriptor(Document.prototype, 'adoptedStyleSheets') || 
+                    _Object.getOwnPropertyDescriptor(ShadowRoot.prototype, 'adoptedStyleSheets');
+  // These use CSSStyleSheet objects which we've already patched
+} catch(e) {}
+
+// ========== Shadow DOM handling ==========
+try {
+  var _attachShadow = Element.prototype.attachShadow;
+  if (_attachShadow) {
+    Element.prototype.attachShadow = function(init) {
+      var shadow = _attachShadow.call(this, init);
+      // Observe the shadow root for changes
+      try {
+        var shadowObserver = new MutationObserver(function(mutations) {
+          mutations.forEach(function(mutation) {
+            if (mutation.type === 'childList') {
+              mutation.addedNodes.forEach(function(node) {
+                if (node.nodeType === 1) {
+                  processElementUrls(node);
+                  if (node.querySelectorAll) {
+                    var children = node.querySelectorAll('[src], [href], [action], [data], [poster], [style]');
+                    children.forEach(processElementUrls);
+                  }
+                }
+              });
+            }
+          });
+        });
+        shadowObserver.observe(shadow, { childList: true, subtree: true });
+      } catch(e) {}
+      return shadow;
+    };
+  }
+} catch(e) {}
+
+// ========== SVG animated href (SVGAnimatedString) ==========
+try {
+  if (_window.SVGAnimatedString) {
+    var svgAnimDesc = _Object.getOwnPropertyDescriptor(SVGAnimatedString.prototype, 'baseVal');
+    if (svgAnimDesc && svgAnimDesc.set) {
+      var _setSvgAnim = svgAnimDesc.set;
+      _Object.defineProperty(SVGAnimatedString.prototype, 'baseVal', {
+        set: function(v) {
+          try {
+            if (v && !isSpecial(v) && !isProxied(v) && v.charAt(0) !== '#') {
+              v = proxify(v);
+            }
+          } catch(e) {}
+          _setSvgAnim.call(this, v);
+        },
+        get: svgAnimDesc.get,
+        configurable: true
+      });
+    }
+  }
+} catch(e) {}
+
+// ========== SVG Elements href attribute ==========
+try {
+  ['SVGAElement', 'SVGImageElement', 'SVGUseElement', 'SVGScriptElement', 
+   'SVGFEImageElement', 'SVGMPathElement', 'SVGTextPathElement'].forEach(function(name) {
+    try {
+      var El = _window[name];
+      if (!El || !El.prototype) return;
+      // These have href as SVGAnimatedString - handled above
+    } catch(e) {}
+  });
+} catch(e) {}
+
+// ========== IntersectionObserver - trigger scan when elements become visible ==========
+try {
+  if (_window.IntersectionObserver) {
+    var _IntersectionObserver = _window.IntersectionObserver;
+    _window.IntersectionObserver = function(callback, options) {
+      var wrappedCallback = function(entries, observer) {
+        // After callback, scan for any lazy-loaded URLs
+        _setTimeout(function() {
+          entries.forEach(function(entry) {
+            if (entry.isIntersecting && entry.target) {
+              processElementUrls(entry.target);
+            }
+          });
+        }, 50);
+        return callback(entries, observer);
+      };
+      return new _IntersectionObserver(wrappedCallback, options);
+    };
+    _window.IntersectionObserver.prototype = _IntersectionObserver.prototype;
+  }
+} catch(e) {}
+
+// ========== Handle data: URLs containing HTML in iframes/scripts ==========
+// Some sites use data:text/html;base64,... or data:text/html,<html>...
+// We can't easily rewrite inside data URLs, but we can at least handle the src
+// The client-side scanning will catch most cases
+
+// ========== Handle <base> tag changes ==========
+// The <base> tag affects how relative URLs are resolved
+// We need to intercept changes to it
+try {
+  var baseDesc = _Object.getOwnPropertyDescriptor(HTMLBaseElement.prototype, 'href');
+  if (baseDesc && baseDesc.set) {
+    var _setBase = baseDesc.set;
+    var _getBase = baseDesc.get;
+    _Object.defineProperty(HTMLBaseElement.prototype, 'href', {
+      set: function(v) {
+        // Don't actually change the base - we want URLs to resolve against proxy
+        // Instead, store it for our resolution
+        this.__originalBase__ = v;
+        // Set it to the target origin so relative URLs work
+        try {
+          _setBase.call(this, getCurrentOrigin() + '/');
+        } catch(e) {
+          _setBase.call(this, v);
+            }
+          },
+          get: function() {
+        // Return what the page expects
+        return this.__originalBase__ || _getBase.call(this);
+      },
+      configurable: true
+    });
+  }
+} catch(e) {}
+
+// ========== Template content handling ==========
+try {
+  var templateContentDesc = _Object.getOwnPropertyDescriptor(HTMLTemplateElement.prototype, 'content');
+  if (templateContentDesc && templateContentDesc.get) {
+    var _getContent = templateContentDesc.get;
+    _Object.defineProperty(HTMLTemplateElement.prototype, 'content', {
+      get: function() {
+        var content = _getContent.call(this);
+        // Process URLs in template content when accessed
+        try {
+          if (content && content.querySelectorAll) {
+            var elements = content.querySelectorAll('[src], [href], [action], [data], [poster]');
+            elements.forEach(processElementUrls);
+          }
+        } catch(e) {}
+        return content;
+      },
+      configurable: true
+    });
   }
 } catch(e) {}
 
@@ -1482,36 +2204,22 @@ function rewriteCssUrls(css) {
   return css;
 }
 
-// ========== HTML Rewriting ==========
+// ========== HTML Rewriting - COMPREHENSIVE ==========
 function rewriteHtml(html) {
   if (!html || typeof html !== 'string') return html;
   try {
-    // src attributes
-    html = html.replace(/(<[^>]+\\s)(src\\s*=\\s*["'])([^"']+)(["'])/gi, function(m, pre, attr, url, q) {
+    // List of all URL attributes
+    var urlAttrsPattern = '(src|href|action|data|poster|formaction|background|cite|longdesc|usemap|ping|manifest|icon|codebase)';
+    var dataUrlAttrsPattern = '(data-src|data-href|data-url|data-background|data-poster|data-image|data-thumb|data-full|data-lazy|data-lazy-src|data-original|data-bg|data-video|data-audio|data-link|data-source|data-load)';
+    
+    // All URL attributes
+    var allUrlPattern = new RegExp('(<[^>]+\\\\s)(' + urlAttrsPattern + '|' + dataUrlAttrsPattern + ')(\\\\s*=\\\\s*["\'])([^"\']+)(["\'])', 'gi');
+    html = html.replace(allUrlPattern, function(m, pre, attrName, _, attr, url, q) {
       if (isSpecial(url) || isProxied(url)) return m;
-      return pre + attr + proxify(url) + q;
+      return pre + attrName + attr + proxify(url) + q;
     });
-    // href attributes (but not javascript: or #)
-    html = html.replace(/(<[^>]+\\s)(href\\s*=\\s*["'])([^"']+)(["'])/gi, function(m, pre, attr, url, q) {
-      if (isSpecial(url) || isProxied(url)) return m;
-      return pre + attr + proxify(url) + q;
-    });
-    // action attributes
-    html = html.replace(/(<form[^>]*\\s)(action\\s*=\\s*["'])([^"']+)(["'])/gi, function(m, pre, attr, url, q) {
-      if (isSpecial(url) || isProxied(url)) return m;
-      return pre + attr + proxify(url) + q;
-    });
-    // data attributes
-    html = html.replace(/(<object[^>]*\\s)(data\\s*=\\s*["'])([^"']+)(["'])/gi, function(m, pre, attr, url, q) {
-      if (isSpecial(url) || isProxied(url)) return m;
-      return pre + attr + proxify(url) + q;
-    });
-    // poster attributes
-    html = html.replace(/(<video[^>]*\\s)(poster\\s*=\\s*["'])([^"']+)(["'])/gi, function(m, pre, attr, url, q) {
-      if (isSpecial(url) || isProxied(url)) return m;
-      return pre + attr + proxify(url) + q;
-    });
-    // srcset attributes
+    
+    // srcset attributes (complex - need special handling)
     html = html.replace(/(<[^>]+\\s)(srcset\\s*=\\s*["'])([^"']+)(["'])/gi, function(m, pre, attr, srcset, q) {
       try {
         var newSrcset = srcset.split(',').map(function(s) {
@@ -1526,10 +2234,41 @@ function rewriteHtml(html) {
         return m;
       }
     });
+    
     // style url()
     html = html.replace(/(<[^>]+\\s)(style\\s*=\\s*["'])([^"']+)(["'])/gi, function(m, pre, attr, style, q) {
-      return pre + attr + rewriteCssUrls(style) + q;
+      if (style.indexOf('url(') !== -1) {
+        return pre + attr + rewriteCssUrls(style) + q;
+      }
+      return m;
     });
+    
+    // xlink:href for SVG
+    html = html.replace(/(<[^>]+\\s)(xlink:href\\s*=\\s*["'])([^"']+)(["'])/gi, function(m, pre, attr, url, q) {
+      if (isSpecial(url) || isProxied(url)) return m;
+      // Don't proxify fragment-only references
+      if (url.charAt(0) === '#') return m;
+      return pre + attr + proxify(url) + q;
+    });
+    
+    // SVG href (without xlink)
+    html = html.replace(/(<[^>]*\\sxmlns[^>]*\\s)(href\\s*=\\s*["'])([^"']+)(["'])/gi, function(m, pre, attr, url, q) {
+      if (isSpecial(url) || isProxied(url)) return m;
+      if (url.charAt(0) === '#') return m;
+      return pre + attr + proxify(url) + q;
+    });
+    
+    // <style> content
+    html = html.replace(/(<style[^>]*>)([\s\S]*?)(<\\/style>)/gi, function(m, open, css, close) {
+      return open + rewriteCssUrls(css) + close;
+    });
+    
+    // Handle unquoted attributes (less common but possible)
+    html = html.replace(/(<[^>]+\\s)(src|href|action)\\s*=\\s*([^\\s>"']+)/gi, function(m, pre, attr, url) {
+      if (isSpecial(url) || isProxied(url)) return m;
+      return pre + attr + '="' + proxify(url) + '"';
+    });
+    
   } catch(e) {}
   return html;
 }
@@ -1538,6 +2277,9 @@ function rewriteHtml(html) {
 try {
   var _docWrite = _document.write.bind(_document);
   var _docWriteln = _document.writeln.bind(_document);
+  var _docOpen = _document.open.bind(_document);
+  var _docClose = _document.close.bind(_document);
+  
   _document.write = function() {
     var args = _Array.prototype.slice.call(arguments).map(function(a) { return rewriteHtml(safeStr(a)); });
     return _docWrite.apply(_document, args);
@@ -1545,6 +2287,18 @@ try {
   _document.writeln = function() {
     var args = _Array.prototype.slice.call(arguments).map(function(a) { return rewriteHtml(safeStr(a)); });
     return _docWriteln.apply(_document, args);
+  };
+  
+  // document.open can take a URL parameter
+  _document.open = function(url, name, features) {
+    if (url && typeof url === 'string' && url.indexOf('text/html') !== 0 && url.indexOf('text/') !== 0) {
+      // It's a URL, not a MIME type
+      if (!isSpecial(url) && !isProxied(url)) {
+        url = proxify(url);
+      }
+      return _docOpen(url, name, features);
+    }
+    return _docOpen(url, name, features);
   };
 } catch(e) {}
 
@@ -1612,21 +2366,256 @@ try {
   _document.createElement = function(tagName, options) {
     var el = _createElement(tagName, options);
     // Elements are already handled by property overrides
+      return el;
+    };
+} catch(e) {}
+
+// ========== document.createElementNS for SVG/MathML ==========
+try {
+  var _createElementNS = _document.createElementNS.bind(_document);
+  _document.createElementNS = function(ns, tagName, options) {
+    var el = _createElementNS(ns, tagName, options);
+    // Elements are handled by property overrides
     return el;
   };
 } catch(e) {}
 
-// ========== MutationObserver for dynamic content ==========
+// ========== cloneNode - ensure cloned elements have proxied URLs ==========
 try {
+  var _cloneNode = Node.prototype.cloneNode;
+  Node.prototype.cloneNode = function(deep) {
+    var clone = _cloneNode.call(this, deep);
+    // Process cloned element URLs
+    try {
+      if (clone.nodeType === 1) {
+        processElementUrls(clone);
+        if (deep && clone.querySelectorAll) {
+          var children = clone.querySelectorAll('[src], [href], [action], [data], [poster], [srcset]');
+          children.forEach(processElementUrls);
+        }
+      }
+    } catch(e) {}
+    return clone;
+  };
+} catch(e) {}
+
+// ========== importNode ==========
+try {
+  var _importNode = _document.importNode.bind(_document);
+  _document.importNode = function(node, deep) {
+    var imported = _importNode(node, deep);
+    try {
+      if (imported.nodeType === 1) {
+        processElementUrls(imported);
+        if (deep && imported.querySelectorAll) {
+          var children = imported.querySelectorAll('[src], [href], [action], [data], [poster], [srcset]');
+          children.forEach(processElementUrls);
+        }
+      }
+    } catch(e) {}
+    return imported;
+  };
+} catch(e) {}
+
+// ========== adoptNode ==========
+try {
+  var _adoptNode = _document.adoptNode.bind(_document);
+  _document.adoptNode = function(node) {
+    var adopted = _adoptNode(node);
+    try {
+      if (adopted && adopted.nodeType === 1) {
+        processElementUrls(adopted);
+        if (adopted.querySelectorAll) {
+          var children = adopted.querySelectorAll('[src], [href], [action], [data], [poster], [srcset]');
+          children.forEach(processElementUrls);
+        }
+      }
+    } catch(e) {}
+    return adopted;
+  };
+} catch(e) {}
+
+// ========== Helper to process element URLs ==========
+function processElementUrls(el) {
+  if (!el || el.nodeType !== 1) return;
+  try {
+    ['src', 'href', 'action', 'data', 'poster', 'formaction'].forEach(function(attr) {
+      if (el.hasAttribute && el.hasAttribute(attr)) {
+        var val = el.getAttribute(attr);
+        if (val && !isSpecial(val) && !isProxied(val)) {
+          _setAttribute.call(el, attr, proxify(val));
+          }
+        }
+      });
+    // Handle srcset
+    if (el.hasAttribute && el.hasAttribute('srcset')) {
+      var srcset = el.getAttribute('srcset');
+      if (srcset && !isProxied(srcset)) {
+        var newSrcset = srcset.split(',').map(function(s) {
+          var parts = s.trim().split(/\\s+/);
+          if (parts[0] && !isSpecial(parts[0]) && !isProxied(parts[0])) {
+            parts[0] = proxify(parts[0]);
+          }
+          return parts.join(' ');
+        }).join(', ');
+        _setAttribute.call(el, 'srcset', newSrcset);
+      }
+    }
+    // Handle style attribute with url()
+    if (el.hasAttribute && el.hasAttribute('style')) {
+      var style = el.getAttribute('style');
+      if (style && style.indexOf('url(') !== -1) {
+        _setAttribute.call(el, 'style', rewriteCssUrls(style));
+      }
+    }
+  } catch(e) {}
+}
+
+// ========== appendChild/insertBefore/replaceChild ==========
+try {
+  var _appendChild = Node.prototype.appendChild;
+  Node.prototype.appendChild = function(child) {
+    try {
+      if (child && child.nodeType === 1) {
+        processElementUrls(child);
+        if (child.querySelectorAll) {
+          var children = child.querySelectorAll('[src], [href], [action], [data], [poster], [srcset], [style]');
+          children.forEach(processElementUrls);
+        }
+      }
+    } catch(e) {}
+    return _appendChild.call(this, child);
+  };
+} catch(e) {}
+
+try {
+  var _insertBefore = Node.prototype.insertBefore;
+  Node.prototype.insertBefore = function(newNode, refNode) {
+    try {
+      if (newNode && newNode.nodeType === 1) {
+        processElementUrls(newNode);
+        if (newNode.querySelectorAll) {
+          var children = newNode.querySelectorAll('[src], [href], [action], [data], [poster], [srcset], [style]');
+          children.forEach(processElementUrls);
+        }
+      }
+    } catch(e) {}
+    return _insertBefore.call(this, newNode, refNode);
+  };
+} catch(e) {}
+
+try {
+  var _replaceChild = Node.prototype.replaceChild;
+  Node.prototype.replaceChild = function(newChild, oldChild) {
+    try {
+      if (newChild && newChild.nodeType === 1) {
+        processElementUrls(newChild);
+        if (newChild.querySelectorAll) {
+          var children = newChild.querySelectorAll('[src], [href], [action], [data], [poster], [srcset], [style]');
+          children.forEach(processElementUrls);
+        }
+      }
+    } catch(e) {}
+    return _replaceChild.call(this, newChild, oldChild);
+  };
+} catch(e) {}
+
+// ========== Element.append/prepend/before/after/replaceWith ==========
+['append', 'prepend', 'before', 'after', 'replaceWith'].forEach(function(method) {
+  try {
+    var orig = Element.prototype[method];
+    if (orig) {
+      Element.prototype[method] = function() {
+        var args = _Array.prototype.slice.call(arguments);
+        args.forEach(function(arg) {
+          if (arg && arg.nodeType === 1) {
+            processElementUrls(arg);
+            if (arg.querySelectorAll) {
+              var children = arg.querySelectorAll('[src], [href], [action], [data], [poster], [srcset], [style]');
+              children.forEach(processElementUrls);
+            }
+          }
+        });
+        return orig.apply(this, args);
+      };
+    }
+  } catch(e) {}
+});
+
+// ========== ParentNode.replaceChildren ==========
+try {
+  if (Element.prototype.replaceChildren) {
+    var _replaceChildren = Element.prototype.replaceChildren;
+    Element.prototype.replaceChildren = function() {
+      var args = _Array.prototype.slice.call(arguments);
+      args.forEach(function(arg) {
+        if (arg && arg.nodeType === 1) {
+          processElementUrls(arg);
+          if (arg.querySelectorAll) {
+            var children = arg.querySelectorAll('[src], [href], [action], [data], [poster], [srcset], [style]');
+            children.forEach(processElementUrls);
+          }
+        }
+      });
+      return _replaceChildren.apply(this, args);
+    };
+  }
+} catch(e) {}
+
+// ========== MutationObserver for dynamic content - COMPREHENSIVE ==========
+try {
+  var urlAttrs = ['src', 'href', 'action', 'data', 'poster', 'formaction', 'background',
+                  'cite', 'longdesc', 'usemap', 'ping', 'manifest', 'icon', 'codebase'];
+  var dataUrlAttrs = ['data-src', 'data-href', 'data-url', 'data-background', 'data-poster',
+                      'data-image', 'data-thumb', 'data-full', 'data-lazy', 'data-lazy-src',
+                      'data-original', 'data-bg', 'data-video', 'data-audio', 'data-link',
+                      'data-source', 'data-load'];
+  var allUrlAttrs = urlAttrs.concat(dataUrlAttrs).concat(['srcset', 'style', 'xlink:href']);
+  
   var observer = new MutationObserver(function(mutations) {
       mutations.forEach(function(mutation) {
       if (mutation.type === 'attributes') {
         var attr = mutation.attributeName;
-        if (attr === 'src' || attr === 'href' || attr === 'action' || attr === 'data' || attr === 'poster') {
-          var el = mutation.target;
+        var el = mutation.target;
+        
+        // Handle URL attributes
+        if (urlAttrs.indexOf(attr) !== -1 || dataUrlAttrs.indexOf(attr) !== -1) {
           var val = el.getAttribute(attr);
           if (val && !isSpecial(val) && !isProxied(val)) {
-            // Use the original setAttribute to avoid infinite loop
+            try {
+              _setAttribute.call(el, attr, proxify(val));
+            } catch(e) {}
+          }
+        }
+        // Handle srcset
+        else if (attr === 'srcset') {
+          var srcset = el.getAttribute('srcset');
+          if (srcset && !isProxied(srcset)) {
+            try {
+              var newSrcset = srcset.split(',').map(function(s) {
+                var parts = s.trim().split(/\\s+/);
+                if (parts[0] && !isSpecial(parts[0]) && !isProxied(parts[0])) {
+                  parts[0] = proxify(parts[0]);
+                }
+                return parts.join(' ');
+              }).join(', ');
+              _setAttribute.call(el, 'srcset', newSrcset);
+            } catch(e) {}
+          }
+        }
+        // Handle style with url()
+        else if (attr === 'style') {
+          var style = el.getAttribute('style');
+          if (style && style.indexOf('url(') !== -1 && !isProxied(style)) {
+            try {
+              _setAttribute.call(el, 'style', rewriteCssUrls(style));
+            } catch(e) {}
+          }
+        }
+        // Handle xlink:href
+        else if (attr === 'xlink:href' || attr === 'href') {
+          var val = el.getAttribute(attr) || el.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
+          if (val && !isSpecial(val) && !isProxied(val)) {
             try {
               _setAttribute.call(el, attr, proxify(val));
             } catch(e) {}
@@ -1635,48 +2624,27 @@ try {
       } else if (mutation.type === 'childList') {
           mutation.addedNodes.forEach(function(node) {
           if (node.nodeType === 1) {
-            // Element node - check for URL attributes
-            ['src', 'href', 'action', 'data', 'poster'].forEach(function(attr) {
-              if (node.hasAttribute && node.hasAttribute(attr)) {
-                var val = node.getAttribute(attr);
-                if (val && !isSpecial(val) && !isProxied(val)) {
-                  try {
-                    _setAttribute.call(node, attr, proxify(val));
-                  } catch(e) {}
-                }
-              }
-            });
-            // Check srcset
-            if (node.hasAttribute && node.hasAttribute('srcset')) {
-              var srcset = node.getAttribute('srcset');
-              if (srcset && !isProxied(srcset)) {
-                try {
-                  var newSrcset = srcset.split(',').map(function(s) {
-                    var parts = s.trim().split(/\\s+/);
-                    if (parts[0] && !isSpecial(parts[0]) && !isProxied(parts[0])) {
-                      parts[0] = proxify(parts[0]);
-                    }
-                    return parts.join(' ');
-                  }).join(', ');
-                  _setAttribute.call(node, 'srcset', newSrcset);
-                } catch(e) {}
-              }
-            }
-            // Process child elements
+            processElementUrls(node);
+            // Process all descendants
             if (node.querySelectorAll) {
-              var children = node.querySelectorAll('[src], [href], [action], [data], [poster], [srcset]');
-              children.forEach(function(child) {
-                ['src', 'href', 'action', 'data', 'poster'].forEach(function(attr) {
-                  if (child.hasAttribute(attr)) {
-                    var val = child.getAttribute(attr);
-                    if (val && !isSpecial(val) && !isProxied(val)) {
-                      try {
-                        _setAttribute.call(child, attr, proxify(val));
-                      } catch(e) {}
-                    }
-                  }
-                });
-              });
+              try {
+                var selector = allUrlAttrs.map(function(a) { return '[' + a + ']'; }).join(', ');
+                var children = node.querySelectorAll(selector);
+                children.forEach(processElementUrls);
+              } catch(e) {}
+            }
+            // Handle style elements
+            if (node.tagName === 'STYLE') {
+              try {
+                var css = node.textContent;
+                if (css && css.indexOf('url(') !== -1 && !isProxied(css)) {
+                  node.textContent = rewriteCssUrls(css);
+                }
+              } catch(e) {}
+            }
+            // Handle script elements with src
+            if (node.tagName === 'SCRIPT' && node.src) {
+              // Already handled by property override
             }
             }
           });
@@ -1684,16 +2652,22 @@ try {
       });
     });
   
-  _window.addEventListener('DOMContentLoaded', function() {
+  function startObserver() {
     try {
-      observer.observe(_document.documentElement, {
+      observer.observe(_document.documentElement || _document.body || _document, {
         attributes: true,
-        attributeFilter: ['src', 'href', 'action', 'data', 'poster', 'srcset'],
+        attributeFilter: allUrlAttrs,
       childList: true,
       subtree: true
     });
     } catch(e) {}
-  });
+  }
+  
+  if (_document.readyState === 'loading') {
+    _window.addEventListener('DOMContentLoaded', startObserver);
+  } else {
+    startObserver();
+  }
 } catch(e) {}
 
 // ========== Click Handler ==========
@@ -1758,7 +2732,18 @@ try {
 function notifyParent() {
   if (!__PROXY_EMBEDDED__) return;
   try {
-    var realParent = _Object.getPrototypeOf(_window).parent;
+    var realParent;
+    try {
+      realParent = _Object.getPrototypeOf(_window).parent;
+    } catch(e) {
+      // Fallback - try to access real parent through iframe
+      try {
+        var frames = _window.frameElement;
+        if (frames && frames.ownerDocument && frames.ownerDocument.defaultView) {
+          realParent = frames.ownerDocument.defaultView;
+        }
+      } catch(e2) {}
+    }
     if (realParent && realParent !== _window) {
       realParent.postMessage({
         type: 'PROXY_URL_CHANGED',
@@ -1776,9 +2761,27 @@ try {
   } else {
     _window.addEventListener('DOMContentLoaded', notifyParent);
   }
-  _window.addEventListener('load', notifyParent);
-  _window.addEventListener('popstate', notifyParent);
-  _window.addEventListener('hashchange', notifyParent);
+  _window.addEventListener('load', function() {
+    notifyParent();
+    // Extra scan after load for late-loading content
+    _setTimeout(function() { if (typeof scanAndProxify === 'function') scanAndProxify(); }, 200);
+  });
+  _window.addEventListener('popstate', function() {
+    notifyParent();
+    _setTimeout(function() { if (typeof scanAndProxify === 'function') scanAndProxify(); }, 100);
+  });
+  _window.addEventListener('hashchange', function(e) {
+    notifyParent();
+    // Try to update hashchange event properties
+    try {
+      if (e && _Object.defineProperty) {
+        _Object.defineProperty(e, 'newURL', { get: function() { return getCurrentTarget(); } });
+      }
+    } catch(ex) {}
+  });
+  _window.addEventListener('beforeunload', function() {
+    notifyParent();
+  });
   
   // Title observer
   var titleObs = new MutationObserver(function() {
@@ -1820,7 +2823,7 @@ try {
           type: 'PROXY_URL_RESPONSE', 
           url: getCurrentTarget(), 
           title: _document.title 
-              }, '*');
+      }, '*');
       } catch(ex) {}
     }
   });
@@ -2132,10 +3135,100 @@ try {
 } catch(e) {}
 
 // ========== contentDocument / contentWindow for iframes ==========
+// Try to inject our proxy script into same-origin iframes
 try {
   var contentDocDesc = _Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'contentDocument');
   var contentWinDesc = _Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'contentWindow');
-  // These are controlled by same-origin policy - let them work naturally
+  
+  if (contentDocDesc && contentDocDesc.get) {
+    var _getContentDoc = contentDocDesc.get;
+    _Object.defineProperty(HTMLIFrameElement.prototype, 'contentDocument', {
+      get: function() {
+        var doc = _getContentDoc.call(this);
+        if (doc) {
+          try {
+            // Try to inject our overrides into the iframe
+            injectIntoFrame(doc.defaultView);
+          } catch(e) {
+            // Cross-origin - can't access
+          }
+        }
+        return doc;
+      },
+      configurable: true
+    });
+  }
+  
+  if (contentWinDesc && contentWinDesc.get) {
+    var _getContentWin = contentWinDesc.get;
+    _Object.defineProperty(HTMLIFrameElement.prototype, 'contentWindow', {
+      get: function() {
+        var win = _getContentWin.call(this);
+        if (win) {
+          try {
+            injectIntoFrame(win);
+          } catch(e) {
+            // Cross-origin - can't access
+          }
+        }
+        return win;
+      },
+      configurable: true
+    });
+  }
+  
+  // Function to inject minimal proxy overrides into iframe windows
+  function injectIntoFrame(frameWindow) {
+    if (!frameWindow || frameWindow.__proxyInjected__) return;
+    try {
+      frameWindow.__proxyInjected__ = true;
+      
+      // Share our proxify function
+      frameWindow.__proxyProxify__ = proxify;
+      frameWindow.__proxyResolve__ = resolveUrl;
+      frameWindow.__proxyGetTarget__ = getCurrentTarget;
+      
+      // Override location.href setter in iframe
+      try {
+        var frameLoc = frameWindow.location;
+        var frameAssign = frameLoc.assign ? frameLoc.assign.bind(frameLoc) : function(u) { frameLoc.href = u; };
+        frameLoc.assign = function(u) { 
+          try { u = proxify(u); } catch(e) {}
+          return frameAssign(u);
+        };
+        frameLoc.replace = function(u) {
+          try { u = proxify(u); } catch(e) {}
+          return frameAssign(u);
+        };
+      } catch(e) {}
+      
+      // Override fetch in iframe
+      try {
+        var frameFetch = frameWindow.fetch;
+        if (frameFetch) {
+          frameWindow.fetch = function(input, init) {
+            try {
+              if (typeof input === 'string' && !isSpecial(input) && !isProxied(input)) {
+                input = proxify(input);
+              }
+            } catch(e) {}
+            return frameFetch.call(frameWindow, input, init);
+          };
+        }
+      } catch(e) {}
+      
+    } catch(e) {}
+  }
+  
+  // Also monitor iframe load events
+  _document.addEventListener('load', function(e) {
+    if (e.target && e.target.tagName === 'IFRAME') {
+      try {
+        injectIntoFrame(e.target.contentWindow);
+      } catch(ex) {}
+    }
+  }, true);
+  
 } catch(e) {}
 
 // ========== window.opener ==========
@@ -2240,6 +3333,133 @@ try {
   }
 } catch(e) {}
 
+// ========== Event.target.href/src handling ==========
+// Scripts might access e.target.href or similar - ensure elements have proxied URLs
+try {
+  var eventTypes = ['click', 'mousedown', 'mouseup', 'contextmenu', 'dblclick', 'auxclick'];
+  eventTypes.forEach(function(type) {
+    _document.addEventListener(type, function(e) {
+      try {
+        if (e.target && e.target.nodeType === 1) {
+          processElementUrls(e.target);
+        }
+      } catch(ex) {}
+    }, { capture: true, passive: true });
+  });
+} catch(e) {}
+
+// ========== URL concatenation/string coercion ==========
+// Handle things like: "prefix" + location, location + "suffix"
+// This is already handled by toString override, but reinforce it
+try {
+  if (Symbol && Symbol.for) {
+    try {
+      _Object.defineProperty(_location, Symbol.for('nodejs.util.inspect.custom'), {
+        value: function() { return getCurrentTarget(); },
+        configurable: true
+      });
+    } catch(e) {}
+  }
+} catch(e) {}
+
+// ========== document.forms action check ==========
+try {
+  var formsDesc = _Object.getOwnPropertyDescriptor(Document.prototype, 'forms');
+  if (formsDesc && formsDesc.get) {
+    var _getForms = formsDesc.get;
+    _Object.defineProperty(_document, 'forms', {
+      get: function() {
+        var forms = _getForms.call(_document);
+        // Ensure all form actions are proxified
+        try {
+          for (var i = 0; i < forms.length; i++) {
+            var form = forms[i];
+            var action = form.getAttribute('action');
+            if (action && !isProxied(action) && !isSpecial(action)) {
+              _setAttribute.call(form, 'action', proxify(action));
+            }
+          }
+        } catch(ex) {}
+        return forms;
+      },
+      configurable: true
+    });
+  }
+} catch(e) {}
+
+// ========== document.links href check ==========
+try {
+  var linksDesc = _Object.getOwnPropertyDescriptor(Document.prototype, 'links');
+  if (linksDesc && linksDesc.get) {
+    var _getLinks = linksDesc.get;
+    _Object.defineProperty(_document, 'links', {
+      get: function() {
+        var links = _getLinks.call(_document);
+        // Ensure all link hrefs are proxified
+        try {
+          for (var i = 0; i < links.length; i++) {
+            var link = links[i];
+            var href = link.getAttribute('href');
+            if (href && !isProxied(href) && !isSpecial(href)) {
+              _setAttribute.call(link, 'href', proxify(href));
+            }
+          }
+        } catch(ex) {}
+        return links;
+      },
+      configurable: true
+    });
+  }
+} catch(e) {}
+
+// ========== document.images src check ==========
+try {
+  var imagesDesc = _Object.getOwnPropertyDescriptor(Document.prototype, 'images');
+  if (imagesDesc && imagesDesc.get) {
+    var _getImages = imagesDesc.get;
+    _Object.defineProperty(_document, 'images', {
+      get: function() {
+        var images = _getImages.call(_document);
+        try {
+          for (var i = 0; i < images.length; i++) {
+            var img = images[i];
+            var src = img.getAttribute('src');
+            if (src && !isProxied(src) && !isSpecial(src)) {
+              _setAttribute.call(img, 'src', proxify(src));
+            }
+          }
+        } catch(ex) {}
+        return images;
+      },
+      configurable: true
+    });
+  }
+} catch(e) {}
+
+// ========== document.scripts src check ==========
+try {
+  var scriptsDesc = _Object.getOwnPropertyDescriptor(Document.prototype, 'scripts');
+  if (scriptsDesc && scriptsDesc.get) {
+    var _getScripts = scriptsDesc.get;
+    _Object.defineProperty(_document, 'scripts', {
+      get: function() {
+        var scripts = _getScripts.call(_document);
+        try {
+          for (var i = 0; i < scripts.length; i++) {
+            var script = scripts[i];
+            var src = script.getAttribute('src');
+            if (src && !isProxied(src) && !isSpecial(src)) {
+              _setAttribute.call(script, 'src', proxify(src));
+            }
+          }
+        } catch(ex) {}
+        return scripts;
+      },
+      configurable: true
+    });
+  }
+} catch(e) {}
+
 // ========== Canvas toDataURL / toBlob - allow but track ==========
 try {
   // Canvas data URLs are fine - they're data: URLs
@@ -2257,11 +3477,23 @@ try {
 
 // ========== Final cleanup - scan entire document ==========
 try {
+  var allUrlAttrsForScan = ['src', 'href', 'action', 'data', 'poster', 'formaction', 'background',
+                            'cite', 'longdesc', 'usemap', 'ping', 'manifest', 'icon', 'codebase',
+                            'data-src', 'data-href', 'data-url', 'data-background', 'data-poster',
+                            'data-image', 'data-thumb', 'data-full', 'data-lazy', 'data-lazy-src',
+                            'data-original', 'data-bg', 'data-video', 'data-audio', 'data-link',
+                            'data-source', 'data-load'];
+  
   function scanAndProxify() {
     try {
-      var allElements = _document.querySelectorAll('[src], [href], [action], [data], [poster], [srcset], [data-src], [data-href], [data-url]');
+      // Build selector for all URL attributes
+      var selector = allUrlAttrsForScan.map(function(a) { return '[' + a + ']'; }).join(', ');
+      selector += ', [srcset], [style*="url("], [xlink\\\\:href]';
+      
+      var allElements = _document.querySelectorAll(selector);
       allElements.forEach(function(el) {
-        ['src', 'href', 'action', 'data', 'poster', 'data-src', 'data-href', 'data-url'].forEach(function(attr) {
+        // Process regular URL attributes
+        allUrlAttrsForScan.forEach(function(attr) {
           if (el.hasAttribute(attr)) {
             var val = el.getAttribute(attr);
             if (val && !isSpecial(val) && !isProxied(val)) {
@@ -2269,6 +3501,7 @@ try {
             }
           }
         });
+        
         // Handle srcset
         if (el.hasAttribute('srcset')) {
           var srcset = el.getAttribute('srcset');
@@ -2285,29 +3518,99 @@ try {
             } catch(e) {}
           }
         }
+        
+        // Handle style with url()
+        if (el.hasAttribute('style')) {
+          var style = el.getAttribute('style');
+          if (style && style.indexOf('url(') !== -1 && !isProxied(style)) {
+            try { _setAttribute.call(el, 'style', rewriteCssUrls(style)); } catch(e) {}
+          }
+        }
+        
+        // Handle xlink:href (SVG)
+        var xlinkHref = el.getAttributeNS && el.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
+        if (xlinkHref && !isSpecial(xlinkHref) && !isProxied(xlinkHref)) {
+          try { el.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', proxify(xlinkHref)); } catch(e) {}
+        }
       });
       
-      // Also scan style elements
+      // Scan style elements
       var styles = _document.querySelectorAll('style');
       styles.forEach(function(style) {
         var css = style.textContent;
         if (css && css.indexOf('url(') !== -1 && !isProxied(css)) {
-          style.textContent = rewriteCssUrls(css);
+          try { style.textContent = rewriteCssUrls(css); } catch(e) {}
         }
       });
+      
+      // Scan inline styles on all elements
+      var styledElements = _document.querySelectorAll('[style]');
+      styledElements.forEach(function(el) {
+        var style = el.getAttribute('style');
+        if (style && style.indexOf('url(') !== -1 && !isProxied(style)) {
+          try { _setAttribute.call(el, 'style', rewriteCssUrls(style)); } catch(e) {}
+        }
+      });
+      
+      // Scan iframes and try to access their content
+      var iframes = _document.querySelectorAll('iframe');
+      iframes.forEach(function(iframe) {
+        try {
+          if (iframe.contentDocument) {
+            // Same-origin iframe - scan its content too
+            var iframeDoc = iframe.contentDocument;
+            var iframeElements = iframeDoc.querySelectorAll('[src], [href]');
+            iframeElements.forEach(function(el) {
+              ['src', 'href'].forEach(function(attr) {
+                if (el.hasAttribute(attr)) {
+                  var val = el.getAttribute(attr);
+                  if (val && !isSpecial(val) && !isProxied(val)) {
+                    try { el.setAttribute(attr, proxify(val)); } catch(e) {}
+                  }
+                }
+              });
+            });
+          }
+        } catch(e) {
+          // Cross-origin iframe - can't access
+        }
+      });
+      
     } catch(e) {}
   }
   
   // Run on DOMContentLoaded and load
   if (_document.readyState === 'loading') {
-    _window.addEventListener('DOMContentLoaded', scanAndProxify);
+    _window.addEventListener('DOMContentLoaded', function() {
+      _setTimeout(scanAndProxify, 0);
+      _setTimeout(scanAndProxify, 100);
+      _setTimeout(scanAndProxify, 500);
+    });
   } else {
     _setTimeout(scanAndProxify, 0);
+    _setTimeout(scanAndProxify, 100);
+    _setTimeout(scanAndProxify, 500);
   }
-  _window.addEventListener('load', scanAndProxify);
+  _window.addEventListener('load', function() {
+    _setTimeout(scanAndProxify, 0);
+    _setTimeout(scanAndProxify, 500);
+    _setTimeout(scanAndProxify, 1000);
+  });
   
-  // Also run periodically for dynamic content (as backup)
-  _setInterval(scanAndProxify, 3000);
+  // Run periodically for dynamic content (more frequently)
+  _setInterval(scanAndProxify, 1000);
+  
+  // Also run on any user interaction (lazy loading triggers)
+  ['scroll', 'resize', 'click', 'mousemove', 'touchstart', 'touchmove'].forEach(function(evt) {
+    var lastRun = 0;
+    _window.addEventListener(evt, function() {
+      var now = Date.now();
+      if (now - lastRun > 500) {
+        lastRun = now;
+        _setTimeout(scanAndProxify, 100);
+      }
+    }, { passive: true });
+  });
 } catch(e) {}
 
 } catch(globalError) {
@@ -2349,6 +3652,131 @@ body{margin-top:0!important}
 </div>
 `, { html: true });
   }
+}
+
+// --------------------
+// JavaScript URL Rewriting
+// --------------------
+function rewriteJSUrls(js, base, isEmbedded) {
+  if (!js || typeof js !== 'string') return js;
+  
+  const prefix = isEmbedded ? "/?embedded=1&url=" : "/?url=";
+  
+  try {
+    // Rewrite URLs in string literals
+    // Match: fetch("/api/..."), fetch('/api/...'), fetch(`/api/...`)
+    // Match: location.href = "/path", window.location = '/path'
+    // Match: new URL("/path", ...), XMLHttpRequest.open('GET', '/path')
+    
+    // Handle strings with absolute URLs
+    js = js.replace(/(["'`])(https?:\/\/[^"'`]+)\1/g, (m, q, url) => {
+      try {
+        if (url.includes('proxy.ikunbeautiful.workers.dev')) return m;
+        // Don't rewrite CDN/common URLs that are likely fine
+        if (url.includes('cdn.') || url.includes('googleapis.com') || 
+            url.includes('cloudflare.com') || url.includes('jsdelivr.net') ||
+            url.includes('unpkg.com') || url.includes('cdnjs.')) return m;
+        const abs = new URL(url).toString();
+        return q + prefix + encodeURIComponent(abs) + q;
+      } catch {
+        return m;
+      }
+    });
+    
+    // Handle relative URLs in certain patterns
+    // These patterns are common and relatively safe to rewrite
+    
+    // fetch("/path") or fetch('/path')
+    js = js.replace(/fetch\s*\(\s*(["'`])(\/?[^"'`]+)\1/g, (m, q, path) => {
+      try {
+        if (path.startsWith('http://') || path.startsWith('https://')) return m;
+        if (path.includes('proxy.ikunbeautiful.workers.dev')) return m;
+        if (isSpecialUrl(path)) return m;
+        const abs = new URL(path, base).toString();
+        return `fetch(${q}${prefix}${encodeURIComponent(abs)}${q}`;
+      } catch {
+        return m;
+      }
+    });
+    
+    // XMLHttpRequest.open
+    js = js.replace(/\.open\s*\(\s*(["'`])(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\1\s*,\s*(["'`])([^"'`]+)\3/gi, 
+      (m, q1, method, q2, url) => {
+      try {
+        if (url.startsWith('http://') || url.startsWith('https://')) {
+          if (url.includes('proxy.ikunbeautiful.workers.dev')) return m;
+          const abs = new URL(url).toString();
+          return `.open(${q1}${method}${q1}, ${q2}${prefix}${encodeURIComponent(abs)}${q2}`;
+        }
+        if (isSpecialUrl(url)) return m;
+        const abs = new URL(url, base).toString();
+        return `.open(${q1}${method}${q1}, ${q2}${prefix}${encodeURIComponent(abs)}${q2}`;
+      } catch {
+        return m;
+      }
+    });
+    
+    // src= assignments (but be careful not to break code)
+    // Only in obvious cases like: .src = "/path"
+    js = js.replace(/\.src\s*=\s*(["'`])(\/?[^"'`]+)\1/g, (m, q, url) => {
+      try {
+        if (url.startsWith('http://') || url.startsWith('https://')) {
+          if (url.includes('proxy.ikunbeautiful.workers.dev')) return m;
+          const abs = new URL(url).toString();
+          return `.src = ${q}${prefix}${encodeURIComponent(abs)}${q}`;
+        }
+        if (isSpecialUrl(url)) return m;
+        if (url.startsWith('/') || url.startsWith('./') || url.startsWith('../')) {
+          const abs = new URL(url, base).toString();
+          return `.src = ${q}${prefix}${encodeURIComponent(abs)}${q}`;
+        }
+        return m;
+      } catch {
+        return m;
+      }
+    });
+    
+    // href= assignments
+    js = js.replace(/\.href\s*=\s*(["'`])(\/?[^"'`]+)\1/g, (m, q, url) => {
+      try {
+        if (url.startsWith('http://') || url.startsWith('https://')) {
+          if (url.includes('proxy.ikunbeautiful.workers.dev')) return m;
+          const abs = new URL(url).toString();
+          return `.href = ${q}${prefix}${encodeURIComponent(abs)}${q}`;
+        }
+        if (isSpecialUrl(url)) return m;
+        if (url.startsWith('/') || url.startsWith('./') || url.startsWith('../')) {
+          const abs = new URL(url, base).toString();
+          return `.href = ${q}${prefix}${encodeURIComponent(abs)}${q}`;
+        }
+        return m;
+      } catch {
+        return m;
+      }
+    });
+    
+    // action= assignments for forms
+    js = js.replace(/\.action\s*=\s*(["'`])(\/?[^"'`]+)\1/g, (m, q, url) => {
+      try {
+        if (url.startsWith('http://') || url.startsWith('https://')) {
+          if (url.includes('proxy.ikunbeautiful.workers.dev')) return m;
+          const abs = new URL(url).toString();
+          return `.action = ${q}${prefix}${encodeURIComponent(abs)}${q}`;
+        }
+        if (isSpecialUrl(url)) return m;
+        if (url.startsWith('/') || url.startsWith('./') || url.startsWith('../')) {
+          const abs = new URL(url, base).toString();
+          return `.action = ${q}${prefix}${encodeURIComponent(abs)}${q}`;
+        }
+        return m;
+      } catch {
+        return m;
+      }
+    });
+    
+  } catch {}
+  
+  return js;
 }
 
 // --------------------
@@ -2515,6 +3943,220 @@ function sanitizeHeaders(headers, isEmbedded) {
   
   return newHeaders;
 }
+
+// --------------------
+// Inline External Resources (CSS and JS)
+// --------------------
+async function inlineExternalResources(html, baseUrl, isEmbedded) {
+  if (!html || typeof html !== 'string') return html;
+  
+  try {
+    // Find all external stylesheets - handle various formats
+    // Also handle src attribute (non-standard but sometimes used)
+    const linkPatterns = [
+      /<link[^>]+rel\s*=\s*["']stylesheet["'][^>]*href\s*=\s*["']([^"']+)["'][^>]*\/?>/gi,
+      /<link[^>]+href\s*=\s*["']([^"']+)["'][^>]*rel\s*=\s*["']stylesheet["'][^>]*\/?>/gi,
+      /<link[^>]+rel\s*=\s*["']stylesheet["'][^>]*href\s*=\s*["']([^"']+)["'][^>]*>/gi,
+      /<link[^>]+href\s*=\s*["']([^"']+)["'][^>]*rel\s*=\s*["']stylesheet["'][^>]*>/gi,
+      // Handle src attribute (non-standard)
+      /<link[^>]+rel\s*=\s*["']stylesheet["'][^>]*src\s*=\s*["']([^"']+)["'][^>]*\/?>/gi,
+      /<link[^>]+src\s*=\s*["']([^"']+)["'][^>]*rel\s*=\s*["']stylesheet["'][^>]*\/?>/gi,
+      /<link[^>]+rel\s*=\s*["']stylesheet["'][^>]*src\s*=\s*["']([^"']+)["'][^>]*>/gi,
+      /<link[^>]+src\s*=\s*["']([^"']+)["'][^>]*rel\s*=\s*["']stylesheet["'][^>]*>/gi
+    ];
+    
+    // Find all external scripts
+    const scriptPatterns = [
+      /<script[^>]+src\s*=\s*["']([^"']+)["'][^>]*><\/script>/gi,
+      /<script[^>]+src\s*=\s*["']([^"']+)["'][^>]*\/>/gi
+    ];
+    
+    const resources = new Map();
+    
+    // Collect stylesheet URLs
+    for (const pattern of linkPatterns) {
+      let match;
+      while ((match = pattern.exec(html)) !== null) {
+        const url = match[1];
+        const fullTag = match[0];
+        // Skip data: and blob: URLs, and already proxied URLs
+        if (!url.startsWith('data:') && !url.startsWith('blob:') && 
+            !url.includes('proxy.ikunbeautiful.workers.dev')) {
+          try {
+            const absUrl = new URL(url, baseUrl).toString();
+            // Don't inline if already in map (avoid duplicates)
+            if (!resources.has(fullTag)) {
+              resources.set(fullTag, { type: 'css', url: absUrl, originalUrl: url });
+            }
+          } catch {}
+        }
+      }
+    }
+    
+    // Collect script URLs
+    for (const pattern of scriptPatterns) {
+      let match;
+      while ((match = pattern.exec(html)) !== null) {
+        const url = match[1];
+        const fullTag = match[0];
+        // Skip data: and blob: URLs, and already proxied URLs
+        if (!url.startsWith('data:') && !url.startsWith('blob:') && 
+            !url.includes('proxy.ikunbeautiful.workers.dev')) {
+          try {
+            const absUrl = new URL(url, baseUrl).toString();
+            // Don't inline if already in map (avoid duplicates)
+            if (!resources.has(fullTag)) {
+              resources.set(fullTag, { type: 'js', url: absUrl, originalUrl: url });
+            }
+          } catch {}
+        }
+      }
+    }
+    
+    // Fetch all resources in parallel
+    const fetchPromises = [];
+    for (const [tag, info] of resources) {
+      fetchPromises.push(
+        fetch(info.url, { 
+          headers: { 
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': info.type === 'css' ? 'text/css,*/*;q=0.1' : 'application/javascript,*/*;q=0.1',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Referer': baseUrl
+          },
+          redirect: 'follow'
+        })
+          .then(async r => {
+            if (r.ok) {
+              const text = await r.text();
+              return { tag, info, content: text, success: true };
+            }
+            return { tag, info, content: '', success: false };
+          })
+          .catch(() => ({ tag, info, content: '', success: false }))
+      );
+    }
+    
+    const results = await Promise.all(fetchPromises);
+    
+    // Replace tags with inline content
+    for (const { tag, info, content, success } of results) {
+      if (!success || !content) continue;
+      
+      try {
+        if (info.type === 'css') {
+          // Rewrite URLs in CSS before inlining
+          const rewrittenCss = rewriteCSSUrls(content, info.url, isEmbedded);
+          // Escape the CSS for HTML
+          const escapedCss = rewrittenCss
+            .replace(/</g, '\\3C ')
+            .replace(/>/g, '\\3E ');
+          // Replace the link tag with style tag
+          html = html.replace(tag, `<style>${escapedCss}</style>`);
+        } else if (info.type === 'js') {
+          // Rewrite URLs in JS before inlining
+          const rewrittenJs = rewriteJSUrls(content, info.url, isEmbedded);
+          // Escape the JS for HTML (handle </script>)
+          const escapedJs = rewrittenJs.replace(/<\/script>/gi, '<\\/script>');
+          // Replace the script tag with inline script
+          // Preserve any attributes like type, async, defer, etc.
+          const attrsMatch = tag.match(/<script([^>]*?)src[^>]*>/i);
+          const attrs = attrsMatch ? attrsMatch[1].replace(/\ssrc\s*=\s*["'][^"']*["']/i, '') : '';
+          html = html.replace(tag, `<script${attrs}>${escapedJs}</script>`);
+        }
+      } catch(e) {
+        // If replacement fails, keep the original tag
+        continue;
+      }
+    }
+    
+    return html;
+  } catch(e) {
+    // If anything fails, return original HTML
+    return html;
+    }
+  }
+  
+// --------------------
+// WebSocket Proxy Handler
+// --------------------
+async function handleWebSocket(request, targetWsUrl) {
+  // Create a WebSocket pair for the client connection
+  const [client, server] = Object.values(new WebSocketPair());
+  
+  // Accept the server side
+  server.accept();
+  
+  try {
+    // Convert ws:// to http:// / wss:// to https:// for the fetch upgrade
+    let fetchUrl = targetWsUrl;
+    if (fetchUrl.startsWith('ws://')) {
+      fetchUrl = 'http://' + fetchUrl.slice(5);
+    } else if (fetchUrl.startsWith('wss://')) {
+      fetchUrl = 'https://' + fetchUrl.slice(6);
+    }
+    
+    // Connect to the target WebSocket server via fetch with Upgrade header
+    const targetResp = await fetch(fetchUrl, {
+      headers: {
+        'Upgrade': 'websocket',
+        'User-Agent': request.headers.get('User-Agent') || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Origin': new URL(fetchUrl).origin,
+      },
+    });
+    
+    const targetWs = targetResp.webSocket;
+    if (!targetWs) {
+      server.close(1011, 'Failed to connect to target WebSocket');
+      return new Response('WebSocket upgrade to target failed', { status: 502 });
+    }
+    
+    targetWs.accept();
+    
+    // Relay: client → target
+    server.addEventListener('message', event => {
+      try {
+        targetWs.send(event.data);
+      } catch (e) {
+        try { server.close(1011, 'Relay error to target'); } catch {}
+      }
+    });
+    
+    // Relay: target → client
+    targetWs.addEventListener('message', event => {
+      try {
+        server.send(event.data);
+      } catch (e) {
+        try { targetWs.close(1011, 'Relay error to client'); } catch {}
+      }
+    });
+    
+    // Handle close events
+    server.addEventListener('close', event => {
+      try { targetWs.close(event.code || 1000, event.reason || 'Client closed'); } catch {}
+    });
+    targetWs.addEventListener('close', event => {
+      try { server.close(event.code || 1000, event.reason || 'Target closed'); } catch {}
+    });
+    
+    // Handle errors
+    server.addEventListener('error', () => {
+      try { targetWs.close(1011, 'Client error'); } catch {}
+    });
+    targetWs.addEventListener('error', () => {
+      try { server.close(1011, 'Target error'); } catch {}
+    });
+    
+  } catch (e) {
+    server.close(1011, 'Connection failed: ' + (e.message || 'Unknown error'));
+    return new Response('WebSocket proxy error: ' + (e.message || 'Unknown error'), { 
+      status: 502,
+      headers: { 'Access-Control-Allow-Origin': '*' }
+    });
+  }
+  
+  return new Response(null, { status: 101, webSocket: client });
+}
   
   // --------------------
   // Main Worker
@@ -2523,6 +4165,7 @@ function sanitizeHeaders(headers, isEmbedded) {
     async fetch(request) {
       const url = new URL(request.url);
       const target = url.searchParams.get("url");
+      const wsTarget = url.searchParams.get("ws");
     const isEmbedded = url.searchParams.get("embedded") === "1";
 
     // CORS preflight
@@ -2535,6 +4178,24 @@ function sanitizeHeaders(headers, isEmbedded) {
           'Access-Control-Max-Age': '86400'
         }
       });
+    }
+
+    // ========== WebSocket Proxy ==========
+    if (wsTarget) {
+      // Validate WebSocket target
+      if (!wsTarget.startsWith('ws://') && !wsTarget.startsWith('wss://') && 
+          !wsTarget.startsWith('http://') && !wsTarget.startsWith('https://')) {
+        return new Response('Invalid WebSocket URL', { status: 400 });
+      }
+      if (wsTarget.includes('proxy.ikunbeautiful.workers.dev')) {
+        return new Response('Cannot proxy WebSocket to self', { status: 400 });
+      }
+      // Handle WebSocket upgrade
+      if (request.headers.get('Upgrade') === 'websocket') {
+        return handleWebSocket(request, wsTarget);
+      }
+      // If not a WebSocket upgrade, return error
+      return new Response('Expected WebSocket upgrade', { status: 426 });
     }
   
     if (!target) {
@@ -2590,20 +4251,93 @@ function sanitizeHeaders(headers, isEmbedded) {
 
       // Handle redirects (limit to 10)
       let redirectCount = 0;
+      let currentTarget = target;
       while (resp.status >= 300 && resp.status < 400 && redirectCount < 10) {
         const location = resp.headers.get('Location');
         if (!location) break;
         
-        const resolvedLocation = new URL(location, target).toString();
-        const prefix = isEmbedded ? "/?embedded=1&url=" : "/?url=";
-        
-        return new Response(null, {
-          status: resp.status,
-          headers: { 
-            'Location': prefix + encodeURIComponent(resolvedLocation),
-            'Access-Control-Allow-Origin': '*'
+        // Resolve relative redirects (like "/") against the current target
+        let resolvedLocation;
+        try {
+          resolvedLocation = new URL(location, currentTarget).toString();
+        } catch {
+          // If URL parsing fails, try to construct it manually
+          if (location.startsWith('/')) {
+            try {
+              const baseUrl = new URL(currentTarget);
+              resolvedLocation = baseUrl.origin + location;
+            } catch {
+              resolvedLocation = location;
+            }
+          } else {
+            resolvedLocation = location;
           }
-        });
+        }
+        
+        // Update currentTarget for next iteration
+        currentTarget = resolvedLocation;
+        
+        // If redirecting to the same proxy, prevent infinite loop
+        if (resolvedLocation.includes("proxy.ikunbeautiful.workers.dev")) {
+          break;
+        }
+        
+        // Follow the redirect
+        try {
+          const redirectHeaders = new Headers(requestHeaders);
+          redirectHeaders.set("Referer", resolvedLocation);
+          
+          const redirectOptions = {
+            method: 'GET', // Redirects are typically GET
+            headers: redirectHeaders,
+            redirect: 'manual'
+          };
+          
+          const redirectController = new AbortController();
+          const redirectTimeoutId = setTimeout(() => redirectController.abort(), 30000);
+          
+          try {
+            resp = await fetch(resolvedLocation, { ...redirectOptions, signal: redirectController.signal });
+          } finally {
+            clearTimeout(redirectTimeoutId);
+          }
+          
+          redirectCount++;
+        } catch(e) {
+          // If redirect fetch fails, return the redirect response
+          break;
+        }
+      }
+      
+      // If we ended with a redirect status, return the proxied redirect
+      if (resp.status >= 300 && resp.status < 400) {
+        const location = resp.headers.get('Location');
+        if (location) {
+          let resolvedLocation;
+          try {
+            resolvedLocation = new URL(location, currentTarget).toString();
+          } catch {
+            if (location.startsWith('/')) {
+              try {
+                const baseUrl = new URL(currentTarget);
+                resolvedLocation = baseUrl.origin + location;
+              } catch {
+                resolvedLocation = location;
+              }
+            } else {
+              resolvedLocation = location;
+            }
+          }
+          
+          const prefix = isEmbedded ? "/?embedded=1&url=" : "/?url=";
+          return new Response(null, {
+            status: resp.status,
+          headers: { 
+              'Location': prefix + encodeURIComponent(resolvedLocation),
+              'Access-Control-Allow-Origin': '*'
+            }
+          });
+        }
       }
   
         const contentType = resp.headers.get("content-type") || "";
@@ -2611,6 +4345,17 @@ function sanitizeHeaders(headers, isEmbedded) {
   
       // HTML
         if (contentType.includes("text/html")) {
+        // Read HTML as text first to inline external resources
+        let htmlText = await resp.text();
+        
+        // Inline external CSS and JS files
+        try {
+          htmlText = await inlineExternalResources(htmlText, target, isEmbedded);
+        } catch(e) {
+          // If inlining fails, continue with original HTML
+        }
+        
+        // Now apply HTMLRewriter to the inlined HTML
         let rewriter = new HTMLRewriter()
           .on("base", new BaseRewriter(target, isEmbedded))
           .on("meta", new MetaRewriter(target, isEmbedded))
@@ -2662,7 +4407,8 @@ function sanitizeHeaders(headers, isEmbedded) {
           rewriter = rewriter.on("body", new InjectToolbar(target));
         }
         
-        return rewriter.transform(new Response(resp.body, {
+        // Create a new Response from the inlined HTML and apply rewriter
+        return rewriter.transform(new Response(htmlText, {
           status: resp.status,
           statusText: resp.statusText,
           headers: sanitizedHeaders
@@ -2716,6 +4462,55 @@ function sanitizeHeaders(headers, isEmbedded) {
             headers: sanitizedHeaders
           });
         }
+      }
+      
+      // JavaScript - try to rewrite URL strings
+      if (contentType.includes("javascript") || contentType.includes("text/javascript") || 
+          contentType.includes("application/x-javascript") || contentType.includes("text/ecmascript")) {
+        try {
+          const js = await resp.text();
+          const rewritten = rewriteJSUrls(js, target, isEmbedded);
+          return new Response(rewritten, {
+            status: resp.status,
+            statusText: resp.statusText,
+            headers: sanitizedHeaders
+          });
+        } catch {
+          return new Response(resp.body, {
+            status: resp.status,
+            statusText: resp.statusText,
+            headers: sanitizedHeaders
+          });
+        }
+      }
+      
+      // XML/XHTML - rewrite URLs similar to HTML
+      if (contentType.includes("text/xml") || contentType.includes("application/xml") || 
+          contentType.includes("application/xhtml+xml")) {
+        try {
+          const xml = await resp.text();
+          const rewritten = rewriteSvgUrls(xml, target, isEmbedded); // Reuse SVG rewriter
+          return new Response(rewritten, {
+            status: resp.status,
+            statusText: resp.statusText,
+            headers: sanitizedHeaders
+          });
+        } catch {
+          return new Response(resp.body, {
+            status: resp.status,
+            statusText: resp.statusText,
+            headers: sanitizedHeaders
+          });
+        }
+      }
+
+      // Server-Sent Events (SSE) - stream through as-is
+      if (contentType.includes("text/event-stream")) {
+        return new Response(resp.body, {
+          status: resp.status,
+          statusText: resp.statusText,
+          headers: sanitizedHeaders
+        });
       }
 
       // Everything else - pass through
