@@ -44,6 +44,8 @@ function isSpecialUrl(url) {
 function isAlreadyProxied(url) {
   if (!url) return false;
   return url.includes('/?url=') || url.includes('/?embedded=') || 
+         url.includes('proxy.ikunbeautiful.workers.dev') ||
+         url.includes('%2F%3Furl%3D') || url.includes('%2F%3Fembedded%3D') ||
          url.includes('proxy.ikunbeautiful.workers.dev');
 }
 
@@ -84,8 +86,9 @@ function rewriteUrl(original, base, isEmbedded = false) {
       }
     }
 
-    // Don't proxy our own worker
+    // Don't proxy our own worker or already-proxied URLs
     if (abs.includes("proxy.ikunbeautiful.workers.dev")) return original;
+    if (isAlreadyProxied(abs)) return original;
   
     // Build proxied URL
     const prefix = isEmbedded ? "/?embedded=1&url=" : "/?url=";
@@ -409,7 +412,9 @@ function rewriteCSSUrls(css, base, isEmbedded) {
         path = path.trim();
         if (!path || path.startsWith('data:') || path.startsWith('blob:') || path.startsWith('#') || path.startsWith('about:')) return m;
         if (path.includes('proxy.ikunbeautiful.workers.dev')) return m;
+        if (path.includes('/?url=') || path.includes('/?embedded=')) return m;
         const abs = new URL(path, base).toString();
+        if (abs.includes('/?url=') || abs.includes('/?embedded=')) return m;
         return `url("${prefix}${encodeURIComponent(abs)}")`;
         } catch {
           return m;
@@ -422,7 +427,9 @@ function rewriteCSSUrls(css, base, isEmbedded) {
         path = path.trim();
         if (!path || path.startsWith('data:')) return m;
         if (path.includes('proxy.ikunbeautiful.workers.dev')) return m;
+        if (path.includes('/?url=') || path.includes('/?embedded=')) return m;
         const abs = new URL(path, base).toString();
+        if (abs.includes('/?url=') || abs.includes('/?embedded=')) return m;
         return `@import "${prefix}${encodeURIComponent(abs)}"`;
       } catch {
         return m;
@@ -435,7 +442,9 @@ function rewriteCSSUrls(css, base, isEmbedded) {
         path = path.trim();
         if (!path || path.startsWith('data:')) return m;
         if (path.includes('proxy.ikunbeautiful.workers.dev')) return m;
+        if (path.includes('/?url=') || path.includes('/?embedded=')) return m;
         const abs = new URL(path, base).toString();
+        if (abs.includes('/?url=') || abs.includes('/?embedded=')) return m;
         return `@import url("${prefix}${encodeURIComponent(abs)}")`;
       } catch {
         return m;
@@ -450,7 +459,9 @@ function rewriteCSSUrls(css, base, isEmbedded) {
             upath = upath.trim();
             if (!upath || upath.startsWith('data:') || upath.startsWith('blob:')) return um;
             if (upath.includes('proxy.ikunbeautiful.workers.dev')) return um;
+            if (upath.includes('/?url=') || upath.includes('/?embedded=')) return um;
             const abs = new URL(upath, base).toString();
+            if (abs.includes('/?url=') || abs.includes('/?embedded=')) return um;
             return `url("${prefix}${encodeURIComponent(abs)}")`;
           } catch {
             return um;
@@ -468,7 +479,9 @@ function rewriteCSSUrls(css, base, isEmbedded) {
         path = path.trim();
         if (!path || path.startsWith('data:') || path.startsWith('blob:') || path.startsWith('#')) return m;
         if (path.includes('proxy.ikunbeautiful.workers.dev')) return m;
+        if (path.includes('/?url=') || path.includes('/?embedded=')) return m;
         const abs = new URL(path, base).toString();
+        if (abs.includes('/?url=') || abs.includes('/?embedded=')) return m;
         return `${varPart}url("${prefix}${encodeURIComponent(abs)}")`;
       } catch {
         return m;
@@ -483,7 +496,9 @@ function rewriteCSSUrls(css, base, isEmbedded) {
             upath = upath.trim();
             if (!upath || upath.startsWith('data:') || upath.startsWith('blob:')) return um;
             if (upath.includes('proxy.ikunbeautiful.workers.dev')) return um;
+            if (upath.includes('/?url=') || upath.includes('/?embedded=')) return um;
             const abs = new URL(upath, base).toString();
+            if (abs.includes('/?url=') || abs.includes('/?embedded=')) return um;
             return `url("${prefix}${encodeURIComponent(abs)}")`;
           } catch {
             return um;
@@ -779,6 +794,7 @@ function proxify(url, forceEmbedded) {
     
     // Absolute URL
     if (url.indexOf('http://') === 0 || url.indexOf('https://') === 0) {
+      if (isProxied(url)) return url;
       return prefix + _encodeURIComponent(url);
     }
     
@@ -786,10 +802,12 @@ function proxify(url, forceEmbedded) {
     var base = getCurrentTarget();
     try {
       var resolved = new _URL(url, base).href;
+      if (isProxied(resolved)) return resolved;
       return prefix + _encodeURIComponent(resolved);
     } catch(e) {
       try {
         var resolved2 = new _URL(url, __PROXY_TARGET__).href;
+        if (isProxied(resolved2)) return resolved2;
         return prefix + _encodeURIComponent(resolved2);
       } catch(e2) {
         // Last resort - prepend base origin
@@ -2213,7 +2231,7 @@ function rewriteHtml(html) {
     var dataUrlAttrsPattern = '(data-src|data-href|data-url|data-background|data-poster|data-image|data-thumb|data-full|data-lazy|data-lazy-src|data-original|data-bg|data-video|data-audio|data-link|data-source|data-load)';
     
     // All URL attributes
-    var allUrlPattern = new RegExp('(<[^>]+\\\\s)(' + urlAttrsPattern + '|' + dataUrlAttrsPattern + ')(\\\\s*=\\\\s*["\'])([^"\']+)(["\'])', 'gi');
+    var allUrlPattern = new RegExp('(<[^>]+\\\\s)(' + urlAttrsPattern + '|' + dataUrlAttrsPattern + ')(\\\\s*=\\\\s*["\\x27])([^"\\x27]+)(["\\x27])', 'gi');
     html = html.replace(allUrlPattern, function(m, pre, attrName, _, attr, url, q) {
       if (isSpecial(url) || isProxied(url)) return m;
       return pre + attrName + attr + proxify(url) + q;
@@ -2259,7 +2277,7 @@ function rewriteHtml(html) {
     });
     
     // <style> content
-    html = html.replace(/(<style[^>]*>)([\s\S]*?)(<\\/style>)/gi, function(m, open, css, close) {
+    html = html.replace(/(<style[^>]*>)([\\s\\S]*?)(<\\/style>)/gi, function(m, open, css, close) {
       return open + rewriteCssUrls(css) + close;
     });
     
@@ -3644,10 +3662,10 @@ body{margin-top:0!important}
 #__proxy_url_input__::placeholder{color:#888!important}
 </style>
 <div id="__proxy_toolbar__">
-  <div style="display:flex;align-items:center;gap:8px;color:#e94560;font-weight:600;font-size:14px;flex-shrink:0;">
+  <a href="https://jimmyqrg.github.io/proxy/" target="_blank" style="display:flex;align-items:center;gap:8px;color:#e94560;font-weight:600;font-size:14px;flex-shrink:0;text-decoration:none;cursor:pointer;" onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/><path d="M2 12h20"/></svg>
     PROXY
-  </div>
+  </a>
   <input type="text" id="__proxy_url_input__" value="${escaped}" placeholder="Enter URL and press Enter" onkeydown="if(event.key==='Enter'){var u=this.value.trim();if(u.indexOf('http')!==0)u='https://'+u;location.href='/?url='+encodeURIComponent(u);}">
 </div>
 `, { html: true });
@@ -3657,126 +3675,11 @@ body{margin-top:0!important}
 // --------------------
 // JavaScript URL Rewriting
 // --------------------
+// DISABLED: rewriteJSUrls was causing SyntaxError in injected scripts and breaking
+// third-party JavaScript. Client-side overrides (fetch, XHR, setAttribute, Element
+// prototype setters, etc.) handle all these cases at runtime instead.
 function rewriteJSUrls(js, base, isEmbedded) {
-  if (!js || typeof js !== 'string') return js;
-  
-  const prefix = isEmbedded ? "/?embedded=1&url=" : "/?url=";
-  
-  try {
-    // Rewrite URLs in string literals
-    // Match: fetch("/api/..."), fetch('/api/...'), fetch(`/api/...`)
-    // Match: location.href = "/path", window.location = '/path'
-    // Match: new URL("/path", ...), XMLHttpRequest.open('GET', '/path')
-    
-    // Handle strings with absolute URLs
-    js = js.replace(/(["'`])(https?:\/\/[^"'`]+)\1/g, (m, q, url) => {
-      try {
-        if (url.includes('proxy.ikunbeautiful.workers.dev')) return m;
-        // Don't rewrite CDN/common URLs that are likely fine
-        if (url.includes('cdn.') || url.includes('googleapis.com') || 
-            url.includes('cloudflare.com') || url.includes('jsdelivr.net') ||
-            url.includes('unpkg.com') || url.includes('cdnjs.')) return m;
-        const abs = new URL(url).toString();
-        return q + prefix + encodeURIComponent(abs) + q;
-      } catch {
-        return m;
-      }
-    });
-    
-    // Handle relative URLs in certain patterns
-    // These patterns are common and relatively safe to rewrite
-    
-    // fetch("/path") or fetch('/path')
-    js = js.replace(/fetch\s*\(\s*(["'`])(\/?[^"'`]+)\1/g, (m, q, path) => {
-      try {
-        if (path.startsWith('http://') || path.startsWith('https://')) return m;
-        if (path.includes('proxy.ikunbeautiful.workers.dev')) return m;
-        if (isSpecialUrl(path)) return m;
-        const abs = new URL(path, base).toString();
-        return `fetch(${q}${prefix}${encodeURIComponent(abs)}${q}`;
-      } catch {
-        return m;
-      }
-    });
-    
-    // XMLHttpRequest.open
-    js = js.replace(/\.open\s*\(\s*(["'`])(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\1\s*,\s*(["'`])([^"'`]+)\3/gi, 
-      (m, q1, method, q2, url) => {
-      try {
-        if (url.startsWith('http://') || url.startsWith('https://')) {
-          if (url.includes('proxy.ikunbeautiful.workers.dev')) return m;
-          const abs = new URL(url).toString();
-          return `.open(${q1}${method}${q1}, ${q2}${prefix}${encodeURIComponent(abs)}${q2}`;
-        }
-        if (isSpecialUrl(url)) return m;
-        const abs = new URL(url, base).toString();
-        return `.open(${q1}${method}${q1}, ${q2}${prefix}${encodeURIComponent(abs)}${q2}`;
-      } catch {
-        return m;
-      }
-    });
-    
-    // src= assignments (but be careful not to break code)
-    // Only in obvious cases like: .src = "/path"
-    js = js.replace(/\.src\s*=\s*(["'`])(\/?[^"'`]+)\1/g, (m, q, url) => {
-      try {
-        if (url.startsWith('http://') || url.startsWith('https://')) {
-          if (url.includes('proxy.ikunbeautiful.workers.dev')) return m;
-          const abs = new URL(url).toString();
-          return `.src = ${q}${prefix}${encodeURIComponent(abs)}${q}`;
-        }
-        if (isSpecialUrl(url)) return m;
-        if (url.startsWith('/') || url.startsWith('./') || url.startsWith('../')) {
-          const abs = new URL(url, base).toString();
-          return `.src = ${q}${prefix}${encodeURIComponent(abs)}${q}`;
-        }
-        return m;
-      } catch {
-        return m;
-      }
-    });
-    
-    // href= assignments
-    js = js.replace(/\.href\s*=\s*(["'`])(\/?[^"'`]+)\1/g, (m, q, url) => {
-      try {
-        if (url.startsWith('http://') || url.startsWith('https://')) {
-          if (url.includes('proxy.ikunbeautiful.workers.dev')) return m;
-          const abs = new URL(url).toString();
-          return `.href = ${q}${prefix}${encodeURIComponent(abs)}${q}`;
-        }
-        if (isSpecialUrl(url)) return m;
-        if (url.startsWith('/') || url.startsWith('./') || url.startsWith('../')) {
-          const abs = new URL(url, base).toString();
-          return `.href = ${q}${prefix}${encodeURIComponent(abs)}${q}`;
-        }
-        return m;
-      } catch {
-        return m;
-      }
-    });
-    
-    // action= assignments for forms
-    js = js.replace(/\.action\s*=\s*(["'`])(\/?[^"'`]+)\1/g, (m, q, url) => {
-      try {
-        if (url.startsWith('http://') || url.startsWith('https://')) {
-          if (url.includes('proxy.ikunbeautiful.workers.dev')) return m;
-          const abs = new URL(url).toString();
-          return `.action = ${q}${prefix}${encodeURIComponent(abs)}${q}`;
-        }
-        if (isSpecialUrl(url)) return m;
-        if (url.startsWith('/') || url.startsWith('./') || url.startsWith('../')) {
-          const abs = new URL(url, base).toString();
-          return `.action = ${q}${prefix}${encodeURIComponent(abs)}${q}`;
-        }
-        return m;
-      } catch {
-        return m;
-      }
-    });
-    
-  } catch {}
-  
-  return js;
+  return js; // Pass through unchanged
 }
 
 // --------------------
@@ -4164,9 +4067,9 @@ async function handleWebSocket(request, targetWsUrl) {
   export default {
     async fetch(request) {
       const url = new URL(request.url);
-      const target = url.searchParams.get("url");
+      let target = url.searchParams.get("url");
       const wsTarget = url.searchParams.get("ws");
-    const isEmbedded = url.searchParams.get("embedded") === "1";
+      let isEmbedded = url.searchParams.get("embedded") === "1";
 
     // CORS preflight
     if (request.method === 'OPTIONS') {
@@ -4198,8 +4101,64 @@ async function handleWebSocket(request, targetWsUrl) {
       return new Response('Expected WebSocket upgrade', { status: 426 });
     }
   
+    // ========== BARE PATH FALLBACK ==========
+    // If no ?url= parameter, try to resolve using Referer header or cookie.
+    // This catches ALL cases where client-side URL interception misses:
+    // - dynamically loaded images/scripts
+    // - lazy loading
+    // - CSS url() references
+    // - location.href = "page/" if the client-side override fails
     if (!target) {
-      return new Response("Missing ?url= parameter", { status: 400 });
+      const referer = request.headers.get('Referer') || '';
+      let targetBase = '';
+      let refEmbedded = false;
+
+      // Method 1: Extract target origin from Referer header
+      try {
+        if (referer) {
+          const refUrl = new URL(referer);
+          const refTarget = refUrl.searchParams.get('url');
+          if (refTarget) {
+            targetBase = new URL(refTarget).origin;
+            refEmbedded = refUrl.searchParams.get('embedded') === '1';
+          }
+        }
+      } catch {}
+
+      // Method 2: Cookie fallback (for cases where Referer is missing)
+      if (!targetBase) {
+        const cookies = request.headers.get('Cookie') || '';
+        const match = cookies.match(/__proxy_target=([^;]+)/);
+        if (match) {
+          try { targetBase = decodeURIComponent(match[1]); } catch {}
+        }
+      }
+
+      if (targetBase) {
+        // Reconstruct the full target URL from the bare path
+        const fullTarget = targetBase + url.pathname + url.search;
+
+        // For navigation/document requests, REDIRECT so the URL updates properly
+        // (this ensures getCurrentTarget() works on the loaded page)
+        const secFetchDest = request.headers.get('Sec-Fetch-Dest') || '';
+        const accept = request.headers.get('Accept') || '';
+        const isNavigation = secFetchDest === 'document' || secFetchDest === 'iframe' ||
+                             (accept.includes('text/html') && !accept.startsWith('image/'));
+
+        if (isNavigation) {
+          const prefix = refEmbedded ? '/?embedded=1&url=' : '/?url=';
+          return Response.redirect(url.origin + prefix + encodeURIComponent(fullTarget), 302);
+        }
+
+        // For sub-resources (images, scripts, CSS, etc.), proxy directly
+        // to avoid redirect overhead
+        target = fullTarget;
+        isEmbedded = refEmbedded;
+      }
+
+      if (!target) {
+        return new Response("Missing ?url= parameter", { status: 400 });
+      }
     }
     
     if (!target.startsWith("http://") && !target.startsWith("https://")) {
@@ -4345,15 +4304,23 @@ async function handleWebSocket(request, targetWsUrl) {
   
       // HTML
         if (contentType.includes("text/html")) {
+        // Set a cookie with the target origin so bare-path requests can be resolved
+        // even when the Referer header is missing (e.g. no-referrer policy)
+        // Only set on HTML responses to avoid unnecessary cookie overhead on every resource
+        try {
+          const targetOrigin = new URL(target).origin;
+          sanitizedHeaders.set('Set-Cookie', 
+            '__proxy_target=' + encodeURIComponent(targetOrigin) + 
+            '; Path=/; SameSite=Lax; Secure; Max-Age=86400');
+        } catch {}
         // Read HTML as text first to inline external resources
         let htmlText = await resp.text();
         
-        // Inline external CSS and JS files
-        try {
-          htmlText = await inlineExternalResources(htmlText, target, isEmbedded);
-        } catch(e) {
-          // If inlining fails, continue with original HTML
-        }
+        // DISABLED: Inlining external CSS/JS was causing double-proxification of URLs,
+        // JS corruption, 503 timeouts, and font corruption. LinkRewriter/ScriptRewriter
+        // already rewrite <link href> and <script src> attributes, and CSS url()
+        // references are handled by rewriteCSSUrls when CSS is fetched through the proxy.
+        // try { htmlText = await inlineExternalResources(htmlText, target, isEmbedded); } catch(e) {}
         
         // Now apply HTMLRewriter to the inlined HTML
         let rewriter = new HTMLRewriter()
