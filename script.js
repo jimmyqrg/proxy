@@ -4,6 +4,10 @@ let history = JSON.parse(localStorage.getItem("browserHistory") || "[]");
 let bookmarks = JSON.parse(localStorage.getItem("browserBookmarks") || "[]");
 let activeTab = null;
 
+// Special internal URLs
+const NEWTAB_URL = "hw://newtab";
+const NEWTAB_PAGE = "https://jimmyqrg.github.io/proxy/default/";
+
 // Track if we're initializing dark mode from device
 let isInitialDarkModeLoad = true;
 
@@ -63,6 +67,8 @@ function toggleTabCloak() {
 function updateBrowserTitle() {
     if (isTabCloaked) {
         document.title = cloakTitle;
+    } else if (activeTab && activeTab.url === NEWTAB_URL) {
+        document.title = originalTitle;
     } else if (activeTab && activeTab.title && activeTab.title !== "Loading..." && activeTab.title !== "Error loading page") {
         document.title = "HackWize - " + (activeTab.title.length > 30 ? activeTab.title.substring(0, 30) + "..." : activeTab.title);
     } else {
@@ -165,11 +171,16 @@ async function renderTabs() {
         tabEl.className = "tab" + (t === activeTab ? " active" : "");
         tabEl.dataset.id = t.id;
         
-        const displayTitle = t.title && t.title.length > 20 
-            ? t.title.substring(0, 20) + "..." 
-            : t.title || new URL(t.url).hostname || "New Tab";
+        let displayTitle;
+        if (t.url === NEWTAB_URL) {
+            displayTitle = "New Tab";
+        } else {
+            displayTitle = t.title && t.title.length > 20 
+                ? t.title.substring(0, 20) + "..." 
+                : t.title || (function() { try { return new URL(t.url).hostname; } catch { return "New Tab"; } })();
+        }
         
-        const faviconUrl = await favicon(t.url);
+        const faviconUrl = (t.url === NEWTAB_URL) ? defaultFavicon : await favicon(t.url);
         
         tabEl.innerHTML = `
             <img src="${faviconUrl}" alt="favicon" onerror="this.src='${defaultFavicon}'">
@@ -272,16 +283,29 @@ function attachDragEvents() {
 }
 
 // ---------- Tab Management ----------
-function newTab(url = "https://jimmyqrg.github.io/proxy/default/") {
+function newTab(url = NEWTAB_URL) {
     const id = Date.now();
     const iframe = document.createElement("iframe");
     
-    iframe.src = proxy + encodeURIComponent(url);
+    // For hw://newtab, load the actual default page but display the special URL
+    const loadUrl = (url === NEWTAB_URL) ? NEWTAB_PAGE : url;
+    iframe.src = proxy + encodeURIComponent(loadUrl);
     iframe.style.display = "none";
     iframe.dataset.id = id;
     iframe.sandbox = "allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-popups-to-escape-sandbox";
     
     iframe.onload = () => {
+        // For hw://newtab, set title directly and skip injection
+        if (url === NEWTAB_URL) {
+            const tab = tabs.find(t => t.id === id);
+            if (tab) {
+                tab.title = "New Tab";
+                updateBrowserTitle();
+                renderTabs();
+            }
+            return;
+        }
+        
         try {
             const script = document.createElement('script');
             script.textContent = `
@@ -485,14 +509,17 @@ function switchTab(id) {
         updateNavButtonStates();
         updateBrowserTitle();
         
-        try {
-            const iframeUrl = activeTab.iframe.contentWindow.location.href;
-            if (iframeUrl && iframeUrl !== 'about:blank' && iframeUrl !== activeTab.url) {
-                activeTab.url = iframeUrl;
-                document.getElementById("url").value = iframeUrl;
+        // Don't try to read iframe URL for internal pages
+        if (activeTab.url !== NEWTAB_URL) {
+            try {
+                const iframeUrl = activeTab.iframe.contentWindow.location.href;
+                if (iframeUrl && iframeUrl !== 'about:blank' && iframeUrl !== activeTab.url) {
+                    activeTab.url = iframeUrl;
+                    document.getElementById("url").value = iframeUrl;
+                }
+            } catch (e) {
+                // Cross-origin restriction, use stored URL
             }
-        } catch (e) {
-            // Cross-origin restriction, use stored URL
         }
     }
 }
@@ -564,7 +591,8 @@ window.addEventListener('message', function(event) {
                     tab = activeTab;
                 }
                 
-                if (tab) {
+                // Don't overwrite title for hw://newtab
+                if (tab && tab.url !== NEWTAB_URL) {
                     tab.title = event.data.title;
                     if (tab === activeTab) {
                         updateBrowserTitle();
@@ -579,6 +607,9 @@ window.addEventListener('message', function(event) {
             if (event.data.url && event.source) {
                 const tab = tabs.find(t => t.iframe && t.iframe.contentWindow === event.source);
                 if (tab) {
+                    // Don't overwrite hw://newtab with the default page's URL
+                    if (tab.url === NEWTAB_URL && event.data.url === NEWTAB_PAGE) break;
+                    
                     tab.url = event.data.url;
                     if (event.data.title) {
                         tab.title = event.data.title;
@@ -598,7 +629,7 @@ window.addEventListener('message', function(event) {
 
 // ---------- History & Bookmarks ----------
 function saveHistory(url) {
-    if (url.includes(proxy) || history[history.length - 1] === url) return;
+    if (!url || url === NEWTAB_URL || url.includes(proxy) || history[history.length - 1] === url) return;
     
     history.push(url);
     if (history.length > 100) {
@@ -757,6 +788,21 @@ toggleBtn.onclick = () => {
 function navigate(url) {
     if (!url || typeof url !== 'string') return;
     
+    // Handle internal URLs
+    if (url === NEWTAB_URL) {
+        if (!activeTab) {
+            newTab(NEWTAB_URL);
+        } else {
+            activeTab.url = NEWTAB_URL;
+            activeTab.title = "New Tab";
+            activeTab.iframe.src = proxy + encodeURIComponent(NEWTAB_PAGE);
+            document.getElementById("url").value = NEWTAB_URL;
+            updateBrowserTitle();
+            renderTabs();
+        }
+        return;
+    }
+    
     if (!url.startsWith("http://") && !url.startsWith("https://")) {
         url = "https://" + url;
     }
@@ -850,7 +896,7 @@ document.getElementById("reload").onclick = () => {
 };
 
 document.getElementById("home").onclick = () => {
-    navigate("https://jimmyqrg.github.io/proxy/default/");
+    navigate(NEWTAB_URL);
 };
 
 document.getElementById("open").onclick = () => {
@@ -927,7 +973,11 @@ function updateNavButtonStates() {
 setInterval(updateNavButtonStates, 1000);
 
 // ---------- Init ----------
+let _initialized = false;
 document.addEventListener('DOMContentLoaded', () => {
+    if (_initialized) return; // Prevent double init
+    _initialized = true;
+    
     // Check saved cloak state
     const savedCloakState = localStorage.getItem("tabCloaked");
     if (savedCloakState === "true") {
@@ -946,7 +996,11 @@ document.addEventListener('DOMContentLoaded', () => {
     
     renderHistory();
     renderBookmarks();
-    newTab();
+    
+    // Create exactly one default tab
+    if (tabs.length === 0) {
+        newTab();
+    }
     
     updateNavButtonStates();
     
