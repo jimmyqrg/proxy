@@ -662,6 +662,15 @@ var _realLocationHref = _location.href;
 var _realLocationSearch = _location.search;
 var _realLocationPathname = _location.pathname;
 
+// Store REAL parent window BEFORE we override parent/top/frameElement
+// This is critical for postMessage communication with the embedding page
+var _realParent = null;
+try {
+  if (_window.parent && _window.parent !== _window) {
+    _realParent = _window.parent;
+  }
+} catch(e) {}
+
 // ========== SAFE UTILITIES ==========
 function safeStr(v) {
   try {
@@ -1179,25 +1188,22 @@ try {
       
       var resolved = resolveUrl(url);
       
-      if (__PROXY_EMBEDDED__) {
+      if (__PROXY_EMBEDDED__ && _realParent) {
         try {
-          var realParent = _Object.getPrototypeOf(_window).parent;
-          if (realParent && realParent !== _window) {
-            realParent.postMessage({ type: 'PROXY_NEW_TAB', url: resolved }, '*');
-            // Return a mock window object
+          _realParent.postMessage({ type: 'PROXY_NEW_TAB', url: resolved }, '*');
+          // Return a mock window object
             return {
               closed: false,
               close: function() {
-                realParent.postMessage({ type: 'PROXY_CLOSE_TAB' }, '*');
+              try { _realParent.postMessage({ type: 'PROXY_CLOSE_TAB' }, '*'); } catch(ex) {}
               },
               focus: function() {},
-              blur: function() {},
-              postMessage: function() {},
-              location: { href: resolved }
+            blur: function() {},
+            postMessage: function() {},
+            location: { href: resolved }
             };
-          }
         } catch(e) {}
-        }
+          }
       
       return _open(proxify(url), name, specs);
     } catch(e) {
@@ -1210,13 +1216,10 @@ try {
 try {
   var _close = _window.close ? _window.close.bind(_window) : function(){};
   _window.close = function() {
-    if (__PROXY_EMBEDDED__) {
+    if (__PROXY_EMBEDDED__ && _realParent) {
       try {
-        var realParent = _Object.getPrototypeOf(_window).parent;
-        if (realParent && realParent !== _window) {
-          realParent.postMessage({ type: 'PROXY_CLOSE_TAB' }, '*');
+        _realParent.postMessage({ type: 'PROXY_CLOSE_TAB' }, '*');
           return;
-        }
       } catch(e) {}
       }
       return _close();
@@ -1789,23 +1792,6 @@ try {
         src = proxify(src);
       }
       return src ? new _Audio(src) : new _Audio();
-    };
-    _window.Audio.prototype = _Audio.prototype;
-  }
-} catch(e) {}
-
-// ========== Audio Constructor ==========
-try {
-  var _Audio = _window.Audio;
-  if (_Audio) {
-    _window.Audio = function(src) { 
-      var audio = new _Audio();
-      if (src && !isSpecial(src) && !isProxied(src)) {
-        audio.src = proxify(src);
-      } else if (src) {
-        audio.src = src;
-      }
-      return audio;
     };
     _window.Audio.prototype = _Audio.prototype;
   }
@@ -2748,28 +2734,14 @@ try {
 
 // ========== Parent Notification ==========
 function notifyParent() {
-  if (!__PROXY_EMBEDDED__) return;
+  if (!__PROXY_EMBEDDED__ || !_realParent) return;
   try {
-    var realParent;
-    try {
-      realParent = _Object.getPrototypeOf(_window).parent;
-    } catch(e) {
-      // Fallback - try to access real parent through iframe
-      try {
-        var frames = _window.frameElement;
-        if (frames && frames.ownerDocument && frames.ownerDocument.defaultView) {
-          realParent = frames.ownerDocument.defaultView;
-        }
-      } catch(e2) {}
-    }
-    if (realParent && realParent !== _window) {
-      realParent.postMessage({
-        type: 'PROXY_URL_CHANGED',
-        url: getCurrentTarget(),
-        title: _document.title,
-        proxyUrl: _location.toString()
+    _realParent.postMessage({
+      type: 'PROXY_URL_CHANGED',
+      url: getCurrentTarget(),
+      title: _document.title,
+      proxyUrl: _realLocationHref
               }, '*');
-            }
   } catch(e) {}
 }
 
@@ -3042,39 +3014,7 @@ try {
 } catch(e) {}
 
 // ========== Shadow DOM support ==========
-try {
-  var _attachShadow = Element.prototype.attachShadow;
-  if (_attachShadow) {
-    Element.prototype.attachShadow = function(options) {
-      var shadow = _attachShadow.call(this, options);
-      
-      // Watch shadow root for URL changes
-      try {
-        var shadowObserver = new MutationObserver(function(mutations) {
-          mutations.forEach(function(mutation) {
-            if (mutation.type === 'childList') {
-              mutation.addedNodes.forEach(function(node) {
-                if (node.nodeType === 1) {
-                  ['src', 'href', 'action', 'data', 'poster'].forEach(function(attr) {
-                    if (node.hasAttribute && node.hasAttribute(attr)) {
-                      var val = node.getAttribute(attr);
-                      if (val && !isSpecial(val) && !isProxied(val)) {
-                        try { node.setAttribute(attr, proxify(val)); } catch(e) {}
-                      }
-                    }
-                  });
-                }
-              });
-            }
-          });
-        });
-        shadowObserver.observe(shadow, { childList: true, subtree: true });
-      } catch(e) {}
-      
-      return shadow;
-    };
-  }
-} catch(e) {}
+// (Already handled above in the Shadow DOM handling section)
 
 // ========== Template element content ==========
 try {
@@ -3119,7 +3059,7 @@ try {
 
 // ========== Cookie handling - rewrite domain/path ==========
 try {
-  var cookieDesc = _Object.getOwnPropertyDescriptor(_Document.prototype, 'cookie');
+  var cookieDesc = _Object.getOwnPropertyDescriptor(Document.prototype, 'cookie');
   if (cookieDesc) {
     var _getCookie = cookieDesc.get;
     var _setCookie = cookieDesc.set;
@@ -3987,11 +3927,11 @@ async function handleWebSocket(request, targetWsUrl) {
   // Create a WebSocket pair for the client connection
   const [client, server] = Object.values(new WebSocketPair());
   
-  // Accept the server side
+  // Accept the server side immediately so we can send close frames on error
   server.accept();
   
   try {
-    // Convert ws:// to http:// / wss:// to https:// for the fetch upgrade
+    // Convert ws:// to http:// / wss:// to https:// for the Cloudflare fetch upgrade
     let fetchUrl = targetWsUrl;
     if (fetchUrl.startsWith('ws://')) {
       fetchUrl = 'http://' + fetchUrl.slice(5);
@@ -3999,18 +3939,36 @@ async function handleWebSocket(request, targetWsUrl) {
       fetchUrl = 'https://' + fetchUrl.slice(6);
     }
     
-    // Connect to the target WebSocket server via fetch with Upgrade header
-    const targetResp = await fetch(fetchUrl, {
-      headers: {
-        'Upgrade': 'websocket',
-        'User-Agent': request.headers.get('User-Agent') || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Origin': new URL(fetchUrl).origin,
-      },
-    });
+    // Build headers - forward important WebSocket and auth headers from client
+    const wsHeaders = new Headers();
+    wsHeaders.set('Upgrade', 'websocket');
+    wsHeaders.set('User-Agent', request.headers.get('User-Agent') || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+    
+    // Set Origin to the target's origin (not the proxy's)
+    try { wsHeaders.set('Origin', new URL(fetchUrl).origin); } catch {}
+    
+    // Forward Sec-WebSocket-Protocol (critical for subprotocol negotiation)
+    const protocol = request.headers.get('Sec-WebSocket-Protocol');
+    if (protocol) wsHeaders.set('Sec-WebSocket-Protocol', protocol);
+    
+    // Forward Sec-WebSocket-Extensions (e.g., permessage-deflate)
+    const extensions = request.headers.get('Sec-WebSocket-Extensions');
+    if (extensions) wsHeaders.set('Sec-WebSocket-Extensions', extensions);
+    
+    // Forward cookies (authentication)
+    const cookie = request.headers.get('Cookie');
+    if (cookie) wsHeaders.set('Cookie', cookie);
+    
+    // Forward Authorization header
+    const auth = request.headers.get('Authorization');
+    if (auth) wsHeaders.set('Authorization', auth);
+    
+    // Connect to the target WebSocket server
+    const targetResp = await fetch(fetchUrl, { headers: wsHeaders });
     
     const targetWs = targetResp.webSocket;
     if (!targetWs) {
-      server.close(1011, 'Failed to connect to target WebSocket');
+      server.close(1011, 'Target did not accept WebSocket upgrade');
       return new Response('WebSocket upgrade to target failed', { status: 502 });
     }
     
@@ -4051,7 +4009,7 @@ async function handleWebSocket(request, targetWsUrl) {
     });
     
   } catch (e) {
-    server.close(1011, 'Connection failed: ' + (e.message || 'Unknown error'));
+    try { server.close(1011, 'Connection failed: ' + (e.message || 'Unknown error')); } catch {}
     return new Response('WebSocket proxy error: ' + (e.message || 'Unknown error'), { 
       status: 502,
       headers: { 'Access-Control-Allow-Origin': '*' }
@@ -4093,8 +4051,9 @@ async function handleWebSocket(request, targetWsUrl) {
       if (wsTarget.includes('proxy.ikunbeautiful.workers.dev')) {
         return new Response('Cannot proxy WebSocket to self', { status: 400 });
       }
-      // Handle WebSocket upgrade
-      if (request.headers.get('Upgrade') === 'websocket') {
+      // Handle WebSocket upgrade (case-insensitive check)
+      const upgradeHeader = (request.headers.get('Upgrade') || '').toLowerCase();
+      if (upgradeHeader === 'websocket') {
         return handleWebSocket(request, wsTarget);
       }
       // If not a WebSocket upgrade, return error
