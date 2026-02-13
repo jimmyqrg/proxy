@@ -3777,15 +3777,6 @@ function sanitizeHeaders(headers, isEmbedded) {
     // Timing
     'timing-allow-origin',
     'server-timing',
-    // CRITICAL: Workers fetch() auto-decompresses response bodies but keeps
-    // the original Content-Encoding header. If we pass through this header
-    // with the already-decompressed body, the browser will try to decompress
-    // again, corrupting binary data (fonts, images, WASM, etc.).
-    'content-encoding',
-    // Content-Length is stale after decompression; let the runtime recalculate.
-    'content-length',
-    // Transfer-Encoding is hop-by-hop, not end-to-end
-    'transfer-encoding',
     // Other potentially problematic headers
     'x-permitted-cross-domain-policies',
     'x-download-options',
@@ -4321,7 +4312,18 @@ function handleWebSocket(request, targetWsUrl) {
   
         const contentType = resp.headers.get("content-type") || "";
       const sanitizedHeaders = sanitizeHeaders(resp.headers, isEmbedded);
-  
+
+      // Helper: strip compression headers for text-processed responses.
+      // Workers' fetch() auto-decompresses when we call resp.text(), so the
+      // body string is uncompressed but the original Content-Encoding header
+      // remains. We must remove it so the browser doesn't try to decompress again.
+      function stripCompressionHeaders(hdrs) {
+        hdrs.delete('content-encoding');
+        hdrs.delete('content-length');
+        hdrs.delete('transfer-encoding');
+        return hdrs;
+      }
+
       // HTML
         if (contentType.includes("text/html")) {
         // Set a cookie with the target origin so bare-path requests can be resolved
@@ -4395,6 +4397,8 @@ function handleWebSocket(request, targetWsUrl) {
         }
         
         // Create a new Response from the inlined HTML and apply rewriter
+        // Strip compression headers since resp.text() already decompressed the body
+        stripCompressionHeaders(sanitizedHeaders);
         return rewriter.transform(new Response(htmlText, {
           status: resp.status,
           statusText: resp.statusText,
@@ -4405,6 +4409,7 @@ function handleWebSocket(request, targetWsUrl) {
       // CSS
       if (contentType.includes("text/css") || contentType.includes("stylesheet")) {
         const css = await resp.text();
+        stripCompressionHeaders(sanitizedHeaders);
         return new Response(rewriteCSSUrls(css, target, isEmbedded), {
           status: resp.status,
           statusText: resp.statusText,
@@ -4416,6 +4421,7 @@ function handleWebSocket(request, targetWsUrl) {
       if (contentType.includes("application/json") || contentType.includes("application/manifest+json")) {
         try {
           const json = await resp.text();
+          stripCompressionHeaders(sanitizedHeaders);
           const rewritten = rewriteJsonUrls(json, target, isEmbedded);
           return new Response(rewritten, {
             status: resp.status,
@@ -4436,6 +4442,7 @@ function handleWebSocket(request, targetWsUrl) {
       if (contentType.includes("image/svg+xml")) {
         try {
           const svg = await resp.text();
+          stripCompressionHeaders(sanitizedHeaders);
           const rewritten = rewriteSvgUrls(svg, target, isEmbedded);
           return new Response(rewritten, {
             status: resp.status,
@@ -4456,6 +4463,7 @@ function handleWebSocket(request, targetWsUrl) {
           contentType.includes("application/x-javascript") || contentType.includes("text/ecmascript")) {
         try {
           const js = await resp.text();
+          stripCompressionHeaders(sanitizedHeaders);
           const rewritten = rewriteJSUrls(js, target, isEmbedded);
           return new Response(rewritten, {
             status: resp.status,
@@ -4476,6 +4484,7 @@ function handleWebSocket(request, targetWsUrl) {
           contentType.includes("application/xhtml+xml")) {
         try {
           const xml = await resp.text();
+          stripCompressionHeaders(sanitizedHeaders);
           const rewritten = rewriteSvgUrls(xml, target, isEmbedded); // Reuse SVG rewriter
           return new Response(rewritten, {
             status: resp.status,
