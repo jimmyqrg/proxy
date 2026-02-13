@@ -4186,7 +4186,9 @@ function handleWebSocket(request, targetWsUrl) {
       requestHeaders.set("User-Agent", request.headers.get("User-Agent") || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
       requestHeaders.set("Accept", request.headers.get("Accept") || "*/*");
       requestHeaders.set("Accept-Language", request.headers.get("Accept-Language") || "en-US,en;q=0.9");
-      requestHeaders.set("Accept-Encoding", "gzip, deflate, br");
+      // DO NOT set Accept-Encoding explicitly! When it's set, Workers runtime
+      // skips automatic decompression, meaning resp.text() would read raw
+      // compressed bytes as UTF-8 → garbage. Let Workers handle it automatically.
       requestHeaders.set("Referer", target);
       
       // Forward important headers
