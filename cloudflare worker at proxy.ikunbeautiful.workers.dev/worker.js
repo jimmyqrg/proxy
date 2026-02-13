@@ -104,7 +104,9 @@ function rewriteUrl(original, base, isEmbedded = false) {
 function rewriteSrcset(srcset, base, isEmbedded) {
   if (!srcset || typeof srcset !== 'string') return srcset;
   try {
-    return srcset.split(',').map(s => {
+    // Split on comma followed by whitespace to avoid breaking URLs with commas
+    // (e.g. CDN image transformation URLs: /cdn-cgi/image/quality=78,width=314,f=auto/img.png)
+    return srcset.split(/,\s+/).map(s => {
       const parts = s.trim().split(/\s+/);
       if (parts[0] && !isSpecialUrl(parts[0])) {
         parts[0] = rewriteUrl(parts[0], base, isEmbedded);
@@ -1243,7 +1245,7 @@ try {
       } 
       // Srcset attribute
       else if (n === 'srcset' && value) {
-        value = safeStr(value).split(',').map(function(s) {
+        value = safeStr(value).split(/,\\s+/).map(function(s) {
           var parts = s.trim().split(/\\s+/);
           if (parts[0] && !isSpecial(parts[0]) && !isProxied(parts[0])) {
             parts[0] = proxify(parts[0]);
@@ -1755,18 +1757,43 @@ try {
 } catch(e) {}
 
 // ========== Service Worker (BLOCK) ==========
+// Single fake object, resolved ready promise, no unhandled rejections
 try {
   if (navigator && navigator.serviceWorker) {
+    var _fakeActiveWorker = {
+      state: 'activated', scriptURL: '/sw-noop.js',
+      addEventListener: function() {}, removeEventListener: function() {},
+      postMessage: function() {}, onstatechange: null,
+      onerror: null
+    };
+    var _fakeRegistration = { 
+      installing: null, waiting: null, active: _fakeActiveWorker, scope: '/',
+      unregister: function() { return _Promise.resolve(true); },
+      update: function() { return _Promise.resolve(_fakeRegistration); },
+      addEventListener: function() {}, removeEventListener: function() {},
+      onupdatefound: null,
+      navigationPreload: { 
+        enable: function(){ return _Promise.resolve(); }, 
+        disable: function(){ return _Promise.resolve(); }, 
+        setHeaderValue: function(){ return _Promise.resolve(); }, 
+        getState: function(){ return _Promise.resolve({enabled:false,headerValue:''}); } 
+      }
+    };
+    var _fakeSW = {
+      register: function() { return _Promise.resolve(_fakeRegistration); },
+      getRegistration: function() { return _Promise.resolve(_fakeRegistration); },
+      getRegistrations: function() { return _Promise.resolve([_fakeRegistration]); },
+      ready: _Promise.resolve(_fakeRegistration),
+      controller: _fakeActiveWorker,
+      addEventListener: function() {},
+      removeEventListener: function() {},
+      startMessages: function() {},
+      oncontrollerchange: null,
+      onmessage: null,
+      onmessageerror: null
+    };
     _Object.defineProperty(navigator, 'serviceWorker', {
-          get: function() {
-        return {
-          register: function() { return _Promise.reject(new Error('Service Workers disabled in proxy')); },
-          getRegistration: function() { return _Promise.resolve(undefined); },
-          getRegistrations: function() { return _Promise.resolve([]); },
-          ready: _Promise.reject(new Error('Service Workers disabled in proxy')),
-          controller: null
-        };
-      },
+      get: function() { return _fakeSW; },
       configurable: true
     });
   }
@@ -2212,21 +2239,22 @@ function rewriteCssUrls(css) {
 function rewriteHtml(html) {
   if (!html || typeof html !== 'string') return html;
   try {
-    // List of all URL attributes
-    var urlAttrsPattern = '(src|href|action|data|poster|formaction|background|cite|longdesc|usemap|ping|manifest|icon|codebase)';
-    var dataUrlAttrsPattern = '(data-src|data-href|data-url|data-background|data-poster|data-image|data-thumb|data-full|data-lazy|data-lazy-src|data-original|data-bg|data-video|data-audio|data-link|data-source|data-load)';
+    // List of all URL attributes - use NON-CAPTURING groups (?:...) to avoid
+    // misaligning the callback parameters in .replace()
+    var urlAttrsPattern = '(?:src|href|action|data|poster|formaction|background|cite|longdesc|usemap|ping|manifest|icon|codebase)';
+    var dataUrlAttrsPattern = '(?:data-src|data-href|data-url|data-background|data-poster|data-image|data-thumb|data-full|data-lazy|data-lazy-src|data-original|data-bg|data-video|data-audio|data-link|data-source|data-load)';
     
-    // All URL attributes
+    // All URL attributes - 5 capture groups: pre, attrName, eqQuote, url, closeQuote
     var allUrlPattern = new RegExp('(<[^>]+\\\\s)(' + urlAttrsPattern + '|' + dataUrlAttrsPattern + ')(\\\\s*=\\\\s*["\\x27])([^"\\x27]+)(["\\x27])', 'gi');
-    html = html.replace(allUrlPattern, function(m, pre, attrName, _, attr, url, q) {
+    html = html.replace(allUrlPattern, function(m, pre, attrName, eqQuote, url, closeQuote) {
       if (isSpecial(url) || isProxied(url)) return m;
-      return pre + attrName + attr + proxify(url) + q;
+      return pre + attrName + eqQuote + proxify(url) + closeQuote;
     });
     
     // srcset attributes (complex - need special handling)
     html = html.replace(/(<[^>]+\\s)(srcset\\s*=\\s*["'])([^"']+)(["'])/gi, function(m, pre, attr, srcset, q) {
       try {
-        var newSrcset = srcset.split(',').map(function(s) {
+        var newSrcset = srcset.split(/,\\s+/).map(function(s) {
           var parts = s.trim().split(/\\s+/);
           if (parts[0] && !isSpecial(parts[0]) && !isProxied(parts[0])) {
             parts[0] = proxify(parts[0]);
@@ -2455,7 +2483,7 @@ function processElementUrls(el) {
     if (el.hasAttribute && el.hasAttribute('srcset')) {
       var srcset = el.getAttribute('srcset');
       if (srcset && !isProxied(srcset)) {
-        var newSrcset = srcset.split(',').map(function(s) {
+        var newSrcset = srcset.split(/,\\s+/).map(function(s) {
           var parts = s.trim().split(/\\s+/);
           if (parts[0] && !isSpecial(parts[0]) && !isProxied(parts[0])) {
             parts[0] = proxify(parts[0]);
@@ -2596,7 +2624,7 @@ try {
           var srcset = el.getAttribute('srcset');
           if (srcset && !isProxied(srcset)) {
             try {
-              var newSrcset = srcset.split(',').map(function(s) {
+              var newSrcset = srcset.split(/,\\s+/).map(function(s) {
                 var parts = s.trim().split(/\\s+/);
                 if (parts[0] && !isSpecial(parts[0]) && !isProxied(parts[0])) {
                   parts[0] = proxify(parts[0]);
@@ -3465,7 +3493,7 @@ try {
           var srcset = el.getAttribute('srcset');
           if (srcset && !isProxied(srcset)) {
             try {
-              var newSrcset = srcset.split(',').map(function(s) {
+              var newSrcset = srcset.split(/,\\s+/).map(function(s) {
                 var parts = s.trim().split(/\\s+/);
                 if (parts[0] && !isSpecial(parts[0]) && !isProxied(parts[0])) {
                   parts[0] = proxify(parts[0]);
@@ -3749,6 +3777,15 @@ function sanitizeHeaders(headers, isEmbedded) {
     // Timing
     'timing-allow-origin',
     'server-timing',
+    // CRITICAL: Workers fetch() auto-decompresses response bodies but keeps
+    // the original Content-Encoding header. If we pass through this header
+    // with the already-decompressed body, the browser will try to decompress
+    // again, corrupting binary data (fonts, images, WASM, etc.).
+    'content-encoding',
+    // Content-Length is stale after decompression; let the runtime recalculate.
+    'content-length',
+    // Transfer-Encoding is hop-by-hop, not end-to-end
+    'transfer-encoding',
     // Other potentially problematic headers
     'x-permitted-cross-domain-policies',
     'x-download-options',
@@ -3780,6 +3817,8 @@ function sanitizeHeaders(headers, isEmbedded) {
   newHeaders.set('Access-Control-Allow-Headers', '*');
   newHeaders.set('Access-Control-Expose-Headers', '*');
   newHeaders.set('Access-Control-Allow-Credentials', 'true');
+  // Ensure Referer is always sent (needed for bare-path fallback resolution)
+  newHeaders.set('Referrer-Policy', 'unsafe-url');
   
   // Timing header for performance API
   newHeaders.set('Timing-Allow-Origin', '*');
@@ -3921,101 +3960,118 @@ async function inlineExternalResources(html, baseUrl, isEmbedded) {
   }
   
 // --------------------
-// WebSocket Proxy Handler
+// WebSocket Proxy Handler - NON-BLOCKING
+// Returns 101 immediately so the browser's WebSocket handshake completes
+// instantly. The target connection is established in the background.
+// Messages from the client are queued until the target is connected.
 // --------------------
-async function handleWebSocket(request, targetWsUrl) {
-  // Create a WebSocket pair for the client connection
+function handleWebSocket(request, targetWsUrl) {
   const [client, server] = Object.values(new WebSocketPair());
-  
-  // Accept the server side immediately so we can send close frames on error
   server.accept();
-  
-  try {
-    // Convert ws:// to http:// / wss:// to https:// for the Cloudflare fetch upgrade
-    let fetchUrl = targetWsUrl;
-    if (fetchUrl.startsWith('ws://')) {
-      fetchUrl = 'http://' + fetchUrl.slice(5);
-    } else if (fetchUrl.startsWith('wss://')) {
-      fetchUrl = 'https://' + fetchUrl.slice(6);
+
+  // --- State for background connection ---
+  let targetWs = null;
+  let targetReady = false;
+  let targetFailed = false;
+  const messageQueue = [];   // queued client messages before target is ready
+  let serverClosed = false;
+
+  // Listen for client messages immediately (before target connects)
+  server.addEventListener('message', event => {
+    if (targetReady && targetWs) {
+      try { targetWs.send(event.data); } catch {}
+    } else if (!targetFailed) {
+      messageQueue.push(event.data);
     }
-    
-    // Build headers - forward important WebSocket and auth headers from client
-    const wsHeaders = new Headers();
-    wsHeaders.set('Upgrade', 'websocket');
-    wsHeaders.set('User-Agent', request.headers.get('User-Agent') || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
-    
-    // Set Origin to the target's origin (not the proxy's)
-    try { wsHeaders.set('Origin', new URL(fetchUrl).origin); } catch {}
-    
-    // Forward Sec-WebSocket-Protocol (critical for subprotocol negotiation)
-    const protocol = request.headers.get('Sec-WebSocket-Protocol');
-    if (protocol) wsHeaders.set('Sec-WebSocket-Protocol', protocol);
-    
-    // Forward Sec-WebSocket-Extensions (e.g., permessage-deflate)
-    const extensions = request.headers.get('Sec-WebSocket-Extensions');
-    if (extensions) wsHeaders.set('Sec-WebSocket-Extensions', extensions);
-    
-    // Forward cookies (authentication)
-    const cookie = request.headers.get('Cookie');
-    if (cookie) wsHeaders.set('Cookie', cookie);
-    
-    // Forward Authorization header
-    const auth = request.headers.get('Authorization');
-    if (auth) wsHeaders.set('Authorization', auth);
-    
-    // Connect to the target WebSocket server
-    const targetResp = await fetch(fetchUrl, { headers: wsHeaders });
-    
-    const targetWs = targetResp.webSocket;
-    if (!targetWs) {
-      server.close(1011, 'Target did not accept WebSocket upgrade');
-      return new Response('WebSocket upgrade to target failed', { status: 502 });
+  });
+
+  server.addEventListener('close', event => {
+    serverClosed = true;
+    if (targetWs) {
+      try { targetWs.close(event.code || 1000, event.reason || ''); } catch {}
     }
-    
-    targetWs.accept();
-    
-    // Relay: client → target
-    server.addEventListener('message', event => {
-      try {
-        targetWs.send(event.data);
-      } catch (e) {
-        try { server.close(1011, 'Relay error to target'); } catch {}
-      }
-    });
-    
-    // Relay: target → client
-    targetWs.addEventListener('message', event => {
-      try {
-        server.send(event.data);
-      } catch (e) {
-        try { targetWs.close(1011, 'Relay error to client'); } catch {}
-      }
-    });
-    
-    // Handle close events
-    server.addEventListener('close', event => {
-      try { targetWs.close(event.code || 1000, event.reason || 'Client closed'); } catch {}
-    });
-    targetWs.addEventListener('close', event => {
-      try { server.close(event.code || 1000, event.reason || 'Target closed'); } catch {}
-    });
-    
-    // Handle errors
-    server.addEventListener('error', () => {
+  });
+
+  server.addEventListener('error', () => {
+    serverClosed = true;
+    if (targetWs) {
       try { targetWs.close(1011, 'Client error'); } catch {}
-    });
-    targetWs.addEventListener('error', () => {
-      try { server.close(1011, 'Target error'); } catch {}
-    });
-    
-  } catch (e) {
-    try { server.close(1011, 'Connection failed: ' + (e.message || 'Unknown error')); } catch {}
-    return new Response('WebSocket proxy error: ' + (e.message || 'Unknown error'), { 
-      status: 502,
-      headers: { 'Access-Control-Allow-Origin': '*' }
-    });
-  }
-  
+    }
+  });
+
+  // --- Connect to target in background (non-blocking) ---
+  (async () => {
+    try {
+      let fetchUrl = targetWsUrl;
+      if (fetchUrl.startsWith('ws://'))  fetchUrl = 'http://'  + fetchUrl.slice(5);
+      else if (fetchUrl.startsWith('wss://')) fetchUrl = 'https://' + fetchUrl.slice(6);
+
+      const wsHeaders = new Headers();
+      wsHeaders.set('Upgrade', 'websocket');
+      wsHeaders.set('User-Agent', request.headers.get('User-Agent') || 'Mozilla/5.0');
+      try { wsHeaders.set('Origin', new URL(fetchUrl).origin); } catch {}
+
+      const protocol = request.headers.get('Sec-WebSocket-Protocol');
+      if (protocol) wsHeaders.set('Sec-WebSocket-Protocol', protocol);
+      const extensions = request.headers.get('Sec-WebSocket-Extensions');
+      if (extensions) wsHeaders.set('Sec-WebSocket-Extensions', extensions);
+      const cookie = request.headers.get('Cookie');
+      if (cookie) wsHeaders.set('Cookie', cookie);
+      const auth = request.headers.get('Authorization');
+      if (auth) wsHeaders.set('Authorization', auth);
+
+      const targetResp = await fetch(fetchUrl, { headers: wsHeaders });
+      targetWs = targetResp.webSocket;
+
+      if (!targetWs) {
+        targetFailed = true;
+        if (!serverClosed) {
+          try { server.close(1011, 'Target did not accept WebSocket upgrade'); } catch {}
+        }
+        return;
+      }
+
+      targetWs.accept();
+      targetReady = true;
+
+      // Flush queued messages from client
+      while (messageQueue.length > 0) {
+        try { targetWs.send(messageQueue.shift()); } catch {}
+      }
+
+      // If client already disconnected while we were connecting, close target
+      if (serverClosed) {
+        try { targetWs.close(1000, 'Client already closed'); } catch {}
+        return;
+      }
+
+      // Relay: target → client
+      targetWs.addEventListener('message', event => {
+        if (!serverClosed) {
+          try { server.send(event.data); } catch {}
+        }
+      });
+
+      targetWs.addEventListener('close', event => {
+        if (!serverClosed) {
+          try { server.close(event.code || 1000, event.reason || ''); } catch {}
+        }
+      });
+
+      targetWs.addEventListener('error', () => {
+        if (!serverClosed) {
+          try { server.close(1011, 'Target error'); } catch {}
+        }
+      });
+    } catch (e) {
+      targetFailed = true;
+      if (!serverClosed) {
+        try { server.close(1011, 'Connection failed'); } catch {}
+      }
+    }
+  })();
+
+  // Return 101 IMMEDIATELY - don't wait for the target connection
   return new Response(null, { status: 101, webSocket: client });
 }
   
@@ -4023,11 +4079,16 @@ async function handleWebSocket(request, targetWsUrl) {
   // Main Worker
   // --------------------
   export default {
-    async fetch(request) {
+    async fetch(request, env, ctx) {
       const url = new URL(request.url);
       let target = url.searchParams.get("url");
       const wsTarget = url.searchParams.get("ws");
       let isEmbedded = url.searchParams.get("embedded") === "1";
+
+    // Handle favicon.ico - return empty icon to prevent 404 noise
+    if (url.pathname === '/favicon.ico' && !target && !wsTarget) {
+      return new Response(null, { status: 204, headers: { 'Cache-Control': 'public, max-age=86400' } });
+    }
 
     // CORS preflight
     if (request.method === 'OPTIONS') {
@@ -4270,7 +4331,7 @@ async function handleWebSocket(request, targetWsUrl) {
           const targetOrigin = new URL(target).origin;
           sanitizedHeaders.set('Set-Cookie', 
             '__proxy_target=' + encodeURIComponent(targetOrigin) + 
-            '; Path=/; SameSite=Lax; Secure; Max-Age=86400');
+            '; Path=/; SameSite=None; Secure; Max-Age=86400');
         } catch {}
         // Read HTML as text first to inline external resources
         let htmlText = await resp.text();
