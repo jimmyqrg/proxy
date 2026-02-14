@@ -1158,24 +1158,24 @@ try {
     try { 
       if (u) {
         var uStr = safeStr(u);
-        // If it's already a proxied URL, extract the target
+        // If it's already a proxied URL, extract the target and keep proxy format
         if (isProxied(uStr)) {
           try {
             var pUrl = new _URL(uStr, 'https://proxy.ikunbeautiful.workers.dev');
             var extracted = pUrl.searchParams.get('url');
             if (extracted) {
               _currentTarget = _decodeURIComponent(extracted);
-              var tUrl = new _URL(_currentTarget);
-              u = tUrl.pathname + tUrl.search + tUrl.hash;
             }
           } catch(e) {}
+          // Keep u as-is (already in proxy format)
         } else {
           // Resolve relative URL against current target to get new target
           try {
             var resolved = new _URL(uStr, _currentTarget).href;
             _currentTarget = resolved;
-            var resolvedUrl = new _URL(resolved);
-            u = resolvedUrl.pathname + resolvedUrl.search + resolvedUrl.hash;
+            // Convert to proxy URL format so the URL bar keeps /?url= format
+            var prefix = __PROXY_EMBEDDED__ ? '/?embedded=1&url=' : '/?url=';
+            u = prefix + _encodeURIComponent(resolved);
           } catch(e) {}
         }
       }
@@ -1198,16 +1198,16 @@ try {
             var extracted = pUrl.searchParams.get('url');
             if (extracted) {
               _currentTarget = _decodeURIComponent(extracted);
-              var tUrl = new _URL(_currentTarget);
-              u = tUrl.pathname + tUrl.search + tUrl.hash;
             }
           } catch(e) {}
+          // Keep u as-is (already in proxy format)
         } else {
           try {
             var resolved = new _URL(uStr, _currentTarget).href;
             _currentTarget = resolved;
-            var resolvedUrl = new _URL(resolved);
-            u = resolvedUrl.pathname + resolvedUrl.search + resolvedUrl.hash;
+            // Convert to proxy URL format so the URL bar keeps /?url= format
+            var prefix = __PROXY_EMBEDDED__ ? '/?embedded=1&url=' : '/?url=';
+            u = prefix + _encodeURIComponent(resolved);
           } catch(e) {}
         }
       }
@@ -2847,6 +2847,8 @@ try {
   });
   _window.addEventListener('popstate', function() {
     // Update _currentTarget from the new URL after popstate
+    // Since we now keep /?url= format in pushState/replaceState, the URL should always
+    // have the ?url= parameter (or ?embedded=1&url=)
     try {
       var realSearch = _location.search;
       try {
@@ -2857,30 +2859,14 @@ try {
         }
       } catch(e) {}
       
-      // Check if the URL has ?url= (old format before replaceState)
       if (realSearch && realSearch.indexOf('url=') !== -1) {
         var params = new URLSearchParams(realSearch);
         var urlParam = params.get('url');
         if (urlParam) {
           _currentTarget = urlParam.indexOf('%') !== -1 ? _decodeURIComponent(urlParam) : urlParam;
         }
-      } else {
-        // URL is in target path format (after our replaceState)
-        // Reconstruct target from origin + current path
-        var realPath = _location.pathname;
-        var realSearchStr = _location.search;
-        var realHash = _location.hash;
-        try {
-          var protoLoc2 = _Object.getOwnPropertyDescriptor(_Object.getPrototypeOf(_window), 'location');
-          if (protoLoc2 && protoLoc2.get) {
-            var rl2 = protoLoc2.get.call(_window);
-            realPath = rl2.pathname;
-            realSearchStr = rl2.search;
-            realHash = rl2.hash;
-          }
-        } catch(e) {}
-        _currentTarget = __PROXY_ORIGIN__ + realPath + realSearchStr + realHash;
       }
+      // If no ?url= found (shouldn't happen now), keep _currentTarget as-is
     } catch(e) {}
     
     notifyParent();
@@ -3698,20 +3684,18 @@ try {
 } catch(e) {}
 
 // ========== REWRITE URL TO TARGET PATH ==========
-// This is the CRITICAL fix for client-side routing frameworks (e.g. Next.js).
-// Since window.location is unforgeable (non-configurable), we cannot override
-// location.pathname via Object.defineProperty or Proxy on window.location.
-// Instead, we use history.replaceState to physically change the URL to match
-// the target site's path. This makes the real location.pathname return the
-// correct value (e.g., /en/g/tag instead of /).
-try {
-  var _targetUrlForRewrite = new _URL(__PROXY_TARGET__);
-  var _targetPath = _targetUrlForRewrite.pathname + _targetUrlForRewrite.search + _targetUrlForRewrite.hash;
-  // Only rewrite if we're currently on the proxy root with ?url= parameter
-  if (_realLocationPathname === '/' || _realLocationSearch.indexOf('url=') !== -1) {
-    _replaceState(_history.state, '', _targetPath);
-  }
-} catch(e) {}
+// DISABLED: replaceState was changing the visible URL from
+// /?url=https://poki.com/en/g/tag to /en/g/tag which broke the proxy URL format.
+// The Proxy on window.location already intercepts location.pathname reads and
+// returns the target's pathname, so client-side routing frameworks (Next.js etc.)
+// should get the correct pathname without physically changing the URL.
+// try {
+//   var _targetUrlForRewrite = new _URL(__PROXY_TARGET__);
+//   var _targetPath = _targetUrlForRewrite.pathname + _targetUrlForRewrite.search + _targetUrlForRewrite.hash;
+//   if (_realLocationPathname === '/' || _realLocationSearch.indexOf('url=') !== -1) {
+//     _replaceState(_history.state, '', _targetPath);
+//   }
+// } catch(e) {}
 
 } catch(globalError) {
   // If anything fails catastrophically, log but don't break the page
