@@ -452,19 +452,47 @@ function newTab(url = NEWTAB_URL) {
                 // Cross-origin restrictions may prevent injection
             }
             
-            // Try to get title from iframe
-            try {
-                const title = iframe.contentDocument?.title;
-                if (title && title.trim()) {
-                    activeTab.title = title;
-                } else {
-                    activeTab.title = new URL(activeTab.url).hostname;
+            // Try to get title from iframe's <title> tag
+            const tab = tabs.find(t => t.id === id);
+            if (tab) {
+                try {
+                    const title = iframe.contentDocument?.title;
+                    if (title && title.trim()) {
+                        tab.title = title;
+                    }
+                    // If contentDocument.title is empty, don't overwrite — the 
+                    // PROXY_URL_CHANGED message from the worker may have already
+                    // set a proper title from the page's <title> tag.
+                } catch (e) {
+                    // Cross-origin — can't read contentDocument.title.
+                    // Don't overwrite; rely on PROXY_URL_CHANGED / UPDATE_TITLE messages.
                 }
-            } catch (e) {
-                activeTab.title = new URL(activeTab.url).hostname || "New Tab";
+                
+                // Fallback: if title is still "Loading..." after a delay,
+                // use the domain name as a last resort
+                if (tab.title === "Loading...") {
+                    setTimeout(() => {
+                        if (tab.title === "Loading...") {
+                            try {
+                                tab.title = new URL(tab.url).hostname || "New Tab";
+                            } catch {
+                                tab.title = "New Tab";
+                            }
+                            updateBrowserTitle();
+                            renderTabs();
+                        }
+                    }, 2000);
+                }
             }
         } catch (e) {
-            activeTab.title = new URL(activeTab.url).hostname || "New Tab";
+            const tab = tabs.find(t => t.id === id);
+            if (tab && tab.title === "Loading...") {
+                try {
+                    tab.title = new URL(tab.url).hostname || "New Tab";
+                } catch {
+                    tab.title = "New Tab";
+                }
+            }
         }
         
         updateBrowserTitle();
@@ -611,8 +639,16 @@ window.addEventListener('message', function(event) {
                     if (tab.url === NEWTAB_URL && event.data.url === NEWTAB_PAGE) break;
                     
                     tab.url = event.data.url;
-                    if (event.data.title) {
+                    if (event.data.title && event.data.title.trim()) {
+                        // Use the <title> from the page
                         tab.title = event.data.title;
+                    } else if (tab.title === "Loading...") {
+                        // No <title> tag — fall back to domain
+                        try {
+                            tab.title = new URL(event.data.url).hostname || "New Tab";
+                        } catch {
+                            tab.title = "New Tab";
+                        }
                     }
                     if (tab === activeTab) {
                         document.getElementById("url").value = event.data.url;
