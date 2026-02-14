@@ -537,18 +537,12 @@ function switchTab(id) {
         updateNavButtonStates();
         updateBrowserTitle();
         
-        // Don't try to read iframe URL for internal pages
-        if (activeTab.url !== NEWTAB_URL) {
-            try {
-                const iframeUrl = activeTab.iframe.contentWindow.location.href;
-                if (iframeUrl && iframeUrl !== 'about:blank' && iframeUrl !== activeTab.url) {
-                    activeTab.url = iframeUrl;
-                    document.getElementById("url").value = iframeUrl;
-                }
-            } catch (e) {
-                // Cross-origin restriction, use stored URL
-            }
-        }
+        // NOTE: Do NOT read iframe.contentWindow.location.href here.
+        // The worker's injected script uses history.replaceState to change
+        // the iframe URL to the target's path (e.g., /en/g/tag) for Next.js
+        // compatibility. Reading the raw iframe URL would show the proxy's
+        // internal path instead of the actual target URL.
+        // The correct target URL is maintained via PROXY_URL_CHANGED messages.
     }
 }
 
@@ -874,18 +868,8 @@ document.getElementById("back").onclick = () => {
     if (activeTab?.iframe?.contentWindow) {
         try {
             activeTab.iframe.contentWindow.history.back();
-            setTimeout(() => {
-                try {
-                    const iframeUrl = activeTab.iframe.contentWindow.location.href;
-                    if (iframeUrl && iframeUrl !== 'about:blank') {
-                        activeTab.url = iframeUrl;
-                        document.getElementById("url").value = iframeUrl;
-                        saveHistory(iframeUrl);
-                    }
-                } catch (e) {
-                    // Cross-origin restriction
-                }
-            }, 100);
+            // URL will be updated via PROXY_URL_CHANGED message from the worker's
+            // injected script (history.back override calls notifyParent)
         } catch (e) {
             console.log("Cannot go back due to cross-origin restrictions");
         }
@@ -896,18 +880,8 @@ document.getElementById("forward").onclick = () => {
     if (activeTab?.iframe?.contentWindow) {
         try {
             activeTab.iframe.contentWindow.history.forward();
-            setTimeout(() => {
-                try {
-                    const iframeUrl = activeTab.iframe.contentWindow.location.href;
-                    if (iframeUrl && iframeUrl !== 'about:blank') {
-                        activeTab.url = iframeUrl;
-                        document.getElementById("url").value = iframeUrl;
-                        saveHistory(iframeUrl);
-                    }
-                } catch (e) {
-                    // Cross-origin restriction
-                }
-            }, 100);
+            // URL will be updated via PROXY_URL_CHANGED message from the worker's
+            // injected script (history.forward override calls notifyParent)
         } catch (e) {
             console.log("Cannot go forward due to cross-origin restrictions");
         }
