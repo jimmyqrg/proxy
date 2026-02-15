@@ -1704,6 +1704,13 @@ try {
       try {
         // Resolve relative WebSocket URLs against current target
         var resolvedWsUrl = safeStr(url).trim();
+        // Don't double-proxify: if URL already points to the proxy's ws endpoint, use it directly
+        if (resolvedWsUrl && (resolvedWsUrl.indexOf('/?ws=') !== -1 || resolvedWsUrl.indexOf('proxy.ikunbeautiful.workers.dev') !== -1)) {
+          if (protocols !== undefined) {
+            return new _WebSocket(resolvedWsUrl, protocols);
+          }
+          return new _WebSocket(resolvedWsUrl);
+        }
         if (resolvedWsUrl && !isSpecial(resolvedWsUrl)) {
           // Handle protocol-relative
           if (resolvedWsUrl.indexOf('//') === 0) {
@@ -4238,7 +4245,7 @@ function handleWebSocket(request, targetWsUrl) {
       let targetBase = '';
       let refEmbedded = false;
 
-      // Method 1: Extract target origin from Referer header
+      // Method 1: Extract target origin from Referer header (?url= parameter)
       try {
         if (referer) {
           const refUrl = new URL(referer);
@@ -4250,13 +4257,27 @@ function handleWebSocket(request, targetWsUrl) {
         }
       } catch {}
 
-      // Method 2: Cookie fallback (for cases where Referer is missing)
+      // Method 2: Cookie fallback (primary method after replaceState rewrites the URL)
+      // After replaceState changes /?url=... to /target/path, the Referer no longer
+      // has ?url= parameter, so the cookie is the most reliable source.
       if (!targetBase) {
         const cookies = request.headers.get('Cookie') || '';
         const match = cookies.match(/__proxy_target=([^;]+)/);
         if (match) {
           try { targetBase = decodeURIComponent(match[1]); } catch {}
         }
+      }
+      
+      // Method 3: Check embedded parameter in Referer even without url param
+      if (targetBase && !refEmbedded) {
+        try {
+          if (referer) {
+            const refUrl = new URL(referer);
+            if (refUrl.searchParams.get('embedded') === '1') {
+              refEmbedded = true;
+            }
+          }
+        } catch {}
       }
 
       if (targetBase) {
