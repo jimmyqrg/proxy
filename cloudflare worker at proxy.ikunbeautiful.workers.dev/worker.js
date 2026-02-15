@@ -778,15 +778,6 @@ function isProxied(url) {
   var s = safeStr(url);
   if (s.indexOf('proxy.ikunbeautiful.workers.dev') !== -1) return true;
   if (s.indexOf('/?url=') !== -1 || s.indexOf('/?embedded=') !== -1) return true;
-  // Also detect the new format: /path?[...]url=encoded_target
-  // Check if URL has a 'url' search parameter that looks like an encoded URL
-  try {
-    var testUrl = new _URL(s, 'https://proxy.ikunbeautiful.workers.dev');
-    var urlParam = testUrl.searchParams.get('url');
-    if (urlParam && (urlParam.indexOf('http://') === 0 || urlParam.indexOf('https://') === 0 || urlParam.indexOf('%') !== -1)) {
-      return true;
-    }
-  } catch(e) {}
   return false;
 }
 
@@ -1163,15 +1154,15 @@ try {
   var _back = _history.back ? _history.back.bind(_history) : function(){};
   var _forward = _history.forward ? _history.forward.bind(_history) : function(){};
   
-  // Helper: build URL in format /target/path?[target_search&]embedded=1&url=encoded_target
+  // Helper: build proxy URL in format /?[embedded=1&]url=encoded_target
+  // We keep the URL as /?url=... because location.pathname is already
+  // intercepted by _locationProxy to return the target's path.
   function buildProxyPath(targetHref) {
     try {
-      var tUrl = new _URL(targetHref);
       var parts = [];
-      if (tUrl.search) parts.push(tUrl.search.slice(1)); // target's own search params
       if (__PROXY_EMBEDDED__) parts.push('embedded=1');
       parts.push('url=' + _encodeURIComponent(targetHref));
-      return tUrl.pathname + '?' + parts.join('&') + (tUrl.hash || '');
+      return '/?' + parts.join('&');
     } catch(e) {
       return null;
     }
@@ -3765,33 +3756,14 @@ try {
 // ========== REWRITE URL TO TARGET PATH (preserving ?url= param) ==========
 // This is CRITICAL for client-side routing frameworks (e.g. Next.js).
 // Object.defineProperty on window.location fails (non-configurable in Chrome),
-// so we use replaceState to set location.pathname to the target's path.
-//
-// IMPORTANT: We preserve the ?url= parameter so that:
-// 1. getCurrentTarget() can still read the target from the URL
-// 2. Bare path fallback works via Referer (which includes ?url=)
-// 3. No dependency on third-party cookies
-//
-// URL format: /target/path?[target_search_params&]embedded=1&url=encoded_full_target
-// Example: /en/g/tag?embedded=1&url=https%3A%2F%2Fpoki.com%2Fen%2Fg%2Ftag
-try {
-  var _targetUrlForRewrite = new _URL(__PROXY_TARGET__);
-  var _searchParts = [];
-  // Include target's own search params first (so the app can read them)
-  if (_targetUrlForRewrite.search) {
-    _searchParts.push(_targetUrlForRewrite.search.slice(1)); // remove leading ?
-  }
-  // Add proxy params
-  if (__PROXY_EMBEDDED__) {
-    _searchParts.push('embedded=1');
-  }
-  _searchParts.push('url=' + _encodeURIComponent(__PROXY_TARGET__));
-  var _newRewriteUrl = _targetUrlForRewrite.pathname + '?' + _searchParts.join('&') + (_targetUrlForRewrite.hash || '');
-  // Only rewrite if we're currently on the proxy root with ?url= parameter
-  if (_realLocationPathname === '/' || _realLocationSearch.indexOf('url=') !== -1) {
-    _replaceState(_history.state, '', _newRewriteUrl);
-  }
-} catch(e) {}
+// The URL stays as /?url=encoded_target (or /?embedded=1&url=encoded_target).
+// We do NOT rewrite the path to /target/path because:
+// 1. location.pathname is already intercepted by _locationProxy to return
+//    the target's path (e.g. /en/g/tag for poki.com/en/g/tag)
+// 2. Keeping /?url= ensures getCurrentTarget() always works
+// 3. Referer headers sent to the worker always include ?url=
+// 4. No dependency on cookies for bare-path resolution
+// No replaceState needed — the URL is already correct.
 
 } catch(globalError) {
   // If anything fails catastrophically, log but don't break the page
