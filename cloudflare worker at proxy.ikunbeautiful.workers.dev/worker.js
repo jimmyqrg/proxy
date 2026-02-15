@@ -776,9 +776,18 @@ function isSpecial(url) {
 function isProxied(url) {
   if (!url) return false;
   var s = safeStr(url);
-  return s.indexOf('/?url=') !== -1 || 
-         s.indexOf('/?embedded=') !== -1 ||
-         s.indexOf('proxy.ikunbeautiful.workers.dev') !== -1;
+  if (s.indexOf('proxy.ikunbeautiful.workers.dev') !== -1) return true;
+  if (s.indexOf('/?url=') !== -1 || s.indexOf('/?embedded=') !== -1) return true;
+  // Also detect the new format: /path?[...]url=encoded_target
+  // Check if URL has a 'url' search parameter that looks like an encoded URL
+  try {
+    var testUrl = new _URL(s, 'https://proxy.ikunbeautiful.workers.dev');
+    var urlParam = testUrl.searchParams.get('url');
+    if (urlParam && (urlParam.indexOf('http://') === 0 || urlParam.indexOf('https://') === 0 || urlParam.indexOf('%') !== -1)) {
+      return true;
+    }
+  } catch(e) {}
+  return false;
 }
 
 // ========== MAIN PROXIFY FUNCTION ==========
@@ -1154,19 +1163,33 @@ try {
   var _back = _history.back ? _history.back.bind(_history) : function(){};
   var _forward = _history.forward ? _history.forward.bind(_history) : function(){};
   
+  // Helper: build URL in format /target/path?[target_search&]embedded=1&url=encoded_target
+  function buildProxyPath(targetHref) {
+    try {
+      var tUrl = new _URL(targetHref);
+      var parts = [];
+      if (tUrl.search) parts.push(tUrl.search.slice(1)); // target's own search params
+      if (__PROXY_EMBEDDED__) parts.push('embedded=1');
+      parts.push('url=' + _encodeURIComponent(targetHref));
+      return tUrl.pathname + '?' + parts.join('&') + (tUrl.hash || '');
+    } catch(e) {
+      return null;
+    }
+  }
+  
   _history.pushState = function(s, t, u) { 
     try { 
       if (u) {
         var uStr = safeStr(u);
-        // If it's already a proxied URL, extract the target
+        // If it's already a proxied URL (has ?url= param), extract the target
         if (isProxied(uStr)) {
           try {
-            var pUrl = new _URL(uStr, 'https://proxy.ikunbeautiful.workers.dev');
+            var pUrl = new _URL(uStr, _realLocationHref);
             var extracted = pUrl.searchParams.get('url');
             if (extracted) {
-              _currentTarget = _decodeURIComponent(extracted);
-              var tUrl = new _URL(_currentTarget);
-              u = tUrl.pathname + tUrl.search + tUrl.hash;
+              _currentTarget = extracted.indexOf('%') !== -1 ? _decodeURIComponent(extracted) : extracted;
+              var built = buildProxyPath(_currentTarget);
+              if (built) u = built;
             }
           } catch(e) {}
         } else {
@@ -1174,8 +1197,8 @@ try {
           try {
             var resolved = new _URL(uStr, _currentTarget).href;
             _currentTarget = resolved;
-            var resolvedUrl = new _URL(resolved);
-            u = resolvedUrl.pathname + resolvedUrl.search + resolvedUrl.hash;
+            var built = buildProxyPath(resolved);
+            if (built) u = built;
           } catch(e) {}
         }
       }
@@ -1194,20 +1217,20 @@ try {
         var uStr = safeStr(u);
         if (isProxied(uStr)) {
           try {
-            var pUrl = new _URL(uStr, 'https://proxy.ikunbeautiful.workers.dev');
+            var pUrl = new _URL(uStr, _realLocationHref);
             var extracted = pUrl.searchParams.get('url');
             if (extracted) {
-              _currentTarget = _decodeURIComponent(extracted);
-              var tUrl = new _URL(_currentTarget);
-              u = tUrl.pathname + tUrl.search + tUrl.hash;
+              _currentTarget = extracted.indexOf('%') !== -1 ? _decodeURIComponent(extracted) : extracted;
+              var built = buildProxyPath(_currentTarget);
+              if (built) u = built;
             }
           } catch(e) {}
         } else {
           try {
             var resolved = new _URL(uStr, _currentTarget).href;
             _currentTarget = resolved;
-            var resolvedUrl = new _URL(resolved);
-            u = resolvedUrl.pathname + resolvedUrl.search + resolvedUrl.hash;
+            var built = buildProxyPath(resolved);
+            if (built) u = built;
           } catch(e) {}
         }
       }
@@ -3704,19 +3727,34 @@ try {
   });
 } catch(e) {}
 
-// ========== REWRITE URL TO TARGET PATH ==========
+// ========== REWRITE URL TO TARGET PATH (preserving ?url= param) ==========
 // This is CRITICAL for client-side routing frameworks (e.g. Next.js).
-// Object.defineProperty on window.location may silently fail (non-configurable),
-// so location.pathname could still return '/' instead of the target path.
-// replaceState physically changes the URL to match the target's path.
-// The parent page (script.js) should NOT read the iframe URL directly —
-// it uses PROXY_URL_CHANGED messages for the correct target URL.
+// Object.defineProperty on window.location fails (non-configurable in Chrome),
+// so we use replaceState to set location.pathname to the target's path.
+//
+// IMPORTANT: We preserve the ?url= parameter so that:
+// 1. getCurrentTarget() can still read the target from the URL
+// 2. Bare path fallback works via Referer (which includes ?url=)
+// 3. No dependency on third-party cookies
+//
+// URL format: /target/path?[target_search_params&]embedded=1&url=encoded_full_target
+// Example: /en/g/tag?embedded=1&url=https%3A%2F%2Fpoki.com%2Fen%2Fg%2Ftag
 try {
   var _targetUrlForRewrite = new _URL(__PROXY_TARGET__);
-  var _targetPath = _targetUrlForRewrite.pathname + _targetUrlForRewrite.search + _targetUrlForRewrite.hash;
+  var _searchParts = [];
+  // Include target's own search params first (so the app can read them)
+  if (_targetUrlForRewrite.search) {
+    _searchParts.push(_targetUrlForRewrite.search.slice(1)); // remove leading ?
+  }
+  // Add proxy params
+  if (__PROXY_EMBEDDED__) {
+    _searchParts.push('embedded=1');
+  }
+  _searchParts.push('url=' + _encodeURIComponent(__PROXY_TARGET__));
+  var _newRewriteUrl = _targetUrlForRewrite.pathname + '?' + _searchParts.join('&') + (_targetUrlForRewrite.hash || '');
   // Only rewrite if we're currently on the proxy root with ?url= parameter
   if (_realLocationPathname === '/' || _realLocationSearch.indexOf('url=') !== -1) {
-    _replaceState(_history.state, '', _targetPath);
+    _replaceState(_history.state, '', _newRewriteUrl);
   }
 } catch(e) {}
 
