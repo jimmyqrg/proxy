@@ -1260,6 +1260,14 @@ try {
     _setTimeout(notifyParent, 100);
     return result;
   };
+  
+  // CRITICAL: Also override on History.prototype to catch frameworks (e.g. Next.js)
+  // that call History.prototype.pushState.call(history, ...) or cache the native method
+  // before our instance-level override. Without this, the ?url= param gets stripped.
+  try {
+    History.prototype.pushState = _history.pushState;
+    History.prototype.replaceState = _history.replaceState;
+  } catch(e) {}
 } catch(e) {}
 
 // ========== WINDOW.OPEN ==========
@@ -1723,17 +1731,40 @@ try {
 try {
   if (_window.WebSocket) {
     var _WebSocket = _window.WebSocket;
+    
+    // Helper: extract the innermost real WebSocket target from a possibly
+    // double/triple-proxied URL like wss://proxy.../ws=wss%3A%2F%2Fproxy.../ws=...
+    function unwrapWsTarget(wsUrl) {
+      for (var i = 0; i < 5; i++) {
+        if (wsUrl.indexOf('proxy.ikunbeautiful.workers.dev') === -1 && wsUrl.indexOf('/?ws=') === -1) break;
+        try {
+          var parse = wsUrl;
+          if (parse.indexOf('ws://') === 0) parse = 'http://' + parse.slice(5);
+          else if (parse.indexOf('wss://') === 0) parse = 'https://' + parse.slice(6);
+          var inner = new _URL(parse).searchParams.get('ws');
+          if (inner) { wsUrl = inner; continue; }
+        } catch(e) {}
+        break;
+      }
+      return wsUrl;
+    }
+    
     _window.WebSocket = function(url, protocols) {
       try {
-        // Resolve relative WebSocket URLs against current target
         var resolvedWsUrl = safeStr(url).trim();
-        // Don't double-proxify: if URL already points to the proxy's ws endpoint, use it directly
+        
+        // If the URL is already proxied (contains proxy domain or /?ws=),
+        // extract the real target to prevent double-proxying.
         if (resolvedWsUrl && (resolvedWsUrl.indexOf('/?ws=') !== -1 || resolvedWsUrl.indexOf('proxy.ikunbeautiful.workers.dev') !== -1)) {
-          if (protocols !== undefined) {
-            return new _WebSocket(resolvedWsUrl, protocols);
+          resolvedWsUrl = unwrapWsTarget(resolvedWsUrl);
+          // If unwrapping yielded a non-proxy URL, fall through to proxy it properly below.
+          // If it's still a proxy URL (couldn't unwrap), pass through directly.
+          if (resolvedWsUrl.indexOf('proxy.ikunbeautiful.workers.dev') !== -1) {
+            if (protocols !== undefined) return new _WebSocket(resolvedWsUrl, protocols);
+            return new _WebSocket(resolvedWsUrl);
           }
-          return new _WebSocket(resolvedWsUrl);
         }
+        
         if (resolvedWsUrl && !isSpecial(resolvedWsUrl)) {
           // Handle protocol-relative
           if (resolvedWsUrl.indexOf('//') === 0) {
@@ -1742,7 +1773,6 @@ try {
           // Handle relative paths
           if (resolvedWsUrl.indexOf('ws://') !== 0 && resolvedWsUrl.indexOf('wss://') !== 0 &&
               resolvedWsUrl.indexOf('http://') !== 0 && resolvedWsUrl.indexOf('https://') !== 0) {
-            // Resolve against target
             var base = getCurrentTarget();
             try {
               resolvedWsUrl = new _URL(resolvedWsUrl, base).href;
@@ -1755,6 +1785,11 @@ try {
             resolvedWsUrl = 'ws://' + resolvedWsUrl.slice(7);
           } else if (resolvedWsUrl.indexOf('https://') === 0) {
             resolvedWsUrl = 'wss://' + resolvedWsUrl.slice(8);
+          }
+          // Don't proxy WebSocket URLs that already point to our proxy
+          if (resolvedWsUrl.indexOf('proxy.ikunbeautiful.workers.dev') !== -1) {
+            if (protocols !== undefined) return new _WebSocket(resolvedWsUrl, protocols);
+            return new _WebSocket(resolvedWsUrl);
           }
           // Route through proxy WebSocket endpoint
           var proxyWsProtocol = _realLocationHref.indexOf('https://') === 0 ? 'wss://' : 'ws://';
@@ -3961,7 +3996,10 @@ function sanitizeHeaders(headers, isEmbedded) {
     }
   }
   
-  // CORS headers for maximum compatibility
+  // CORS headers - set permissive defaults.
+  // NOTE: Access-Control-Allow-Origin will be patched later by fixCorsForRequest()
+  // to echo the actual request Origin when credentials are involved, because
+  // browsers reject wildcard (*) when credentials mode is 'include'.
   newHeaders.set('Access-Control-Allow-Origin', '*');
   newHeaders.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD');
   newHeaders.set('Access-Control-Allow-Headers', '*');
@@ -3974,6 +4012,19 @@ function sanitizeHeaders(headers, isEmbedded) {
   newHeaders.set('Timing-Allow-Origin', '*');
   
   return newHeaders;
+}
+
+// Patch CORS headers to work with credentialed requests.
+// When the browser sends credentials (cookies, Authorization, etc.),
+// Access-Control-Allow-Origin MUST NOT be '*' — it must echo the
+// actual request Origin. This function patches the headers in-place.
+function fixCorsForRequest(headers, request) {
+  const origin = request.headers.get('Origin');
+  if (origin) {
+    headers.set('Access-Control-Allow-Origin', origin);
+    headers.set('Vary', 'Origin');
+  }
+  return headers;
 }
 
 // --------------------
@@ -4242,30 +4293,56 @@ function handleWebSocket(request, targetWsUrl) {
 
     // CORS preflight
     if (request.method === 'OPTIONS') {
+      const corsOrigin = request.headers.get('Origin') || '*';
       return new Response(null, {
         headers: {
-          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Origin': corsOrigin,
           'Access-Control-Allow-Methods': '*',
           'Access-Control-Allow-Headers': '*',
-          'Access-Control-Max-Age': '86400'
+          'Access-Control-Allow-Credentials': 'true',
+          'Access-Control-Max-Age': '86400',
+          ...(corsOrigin !== '*' ? { 'Vary': 'Origin' } : {})
         }
       });
     }
 
     // ========== WebSocket Proxy ==========
     if (wsTarget) {
+      // Unwrap nested proxy WebSocket URLs.
+      // A double-proxied URL looks like:
+      //   ?ws=wss://proxy.ikunbeautiful.workers.dev/?ws=wss%3A%2F%2Freal-target...
+      // We recursively extract the innermost ?ws= target.
+      let finalWsTarget = wsTarget;
+      for (let i = 0; i < 5; i++) { // max 5 unwrap iterations
+        if (finalWsTarget.includes('proxy.ikunbeautiful.workers.dev')) {
+          try {
+            // Normalise ws(s) to http(s) so URL parsing works
+            let parseUrl = finalWsTarget;
+            if (parseUrl.startsWith('ws://')) parseUrl = 'http://' + parseUrl.slice(5);
+            else if (parseUrl.startsWith('wss://')) parseUrl = 'https://' + parseUrl.slice(6);
+            const inner = new URL(parseUrl).searchParams.get('ws');
+            if (inner) {
+              finalWsTarget = inner;
+              continue;
+            }
+          } catch {}
+          break; // Couldn't unwrap further
+        }
+        break; // Not a proxy URL, done
+      }
+
       // Validate WebSocket target
-      if (!wsTarget.startsWith('ws://') && !wsTarget.startsWith('wss://') && 
-          !wsTarget.startsWith('http://') && !wsTarget.startsWith('https://')) {
+      if (!finalWsTarget.startsWith('ws://') && !finalWsTarget.startsWith('wss://') && 
+          !finalWsTarget.startsWith('http://') && !finalWsTarget.startsWith('https://')) {
         return new Response('Invalid WebSocket URL', { status: 400 });
       }
-      if (wsTarget.includes('proxy.ikunbeautiful.workers.dev')) {
+      if (finalWsTarget.includes('proxy.ikunbeautiful.workers.dev')) {
         return new Response('Cannot proxy WebSocket to self', { status: 400 });
       }
       // Handle WebSocket upgrade (case-insensitive check)
       const upgradeHeader = (request.headers.get('Upgrade') || '').toLowerCase();
       if (upgradeHeader === 'websocket') {
-        return handleWebSocket(request, wsTarget);
+        return handleWebSocket(request, finalWsTarget);
       }
       // If not a WebSocket upgrade, return error
       return new Response('Expected WebSocket upgrade', { status: 426 });
@@ -4278,6 +4355,7 @@ function handleWebSocket(request, targetWsUrl) {
     // - lazy loading
     // - CSS url() references
     // - location.href = "page/" if the client-side override fails
+    // - WebSocket upgrades on bare paths
     if (!target) {
       const referer = request.headers.get('Referer') || '';
       let targetBase = '';
@@ -4321,6 +4399,16 @@ function handleWebSocket(request, targetWsUrl) {
       if (targetBase) {
         // Reconstruct the full target URL from the bare path
         const fullTarget = targetBase + url.pathname + url.search;
+
+        // Handle WebSocket upgrades on bare paths
+        const bareUpgrade = (request.headers.get('Upgrade') || '').toLowerCase();
+        if (bareUpgrade === 'websocket') {
+          // Convert to wss:// URL for the WebSocket handler
+          let wsUrl = fullTarget;
+          if (wsUrl.startsWith('http://')) wsUrl = 'ws://' + wsUrl.slice(7);
+          else if (wsUrl.startsWith('https://')) wsUrl = 'wss://' + wsUrl.slice(8);
+          return handleWebSocket(request, wsUrl);
+        }
 
         // For navigation/document requests, REDIRECT so the URL updates properly
         // (this ensures getCurrentTarget() works on the loaded page)
@@ -4475,11 +4563,14 @@ function handleWebSocket(request, targetWsUrl) {
           }
           
           const prefix = isEmbedded ? "/?embedded=1&url=" : "/?url=";
+          const redirectCorsOrigin = request.headers.get('Origin') || '*';
           return new Response(null, {
             status: resp.status,
           headers: { 
               'Location': prefix + encodeURIComponent(resolvedLocation),
-              'Access-Control-Allow-Origin': '*'
+              'Access-Control-Allow-Origin': redirectCorsOrigin,
+              'Access-Control-Allow-Credentials': 'true',
+              ...(redirectCorsOrigin !== '*' ? { 'Vary': 'Origin' } : {})
             }
           });
         }
@@ -4487,6 +4578,7 @@ function handleWebSocket(request, targetWsUrl) {
   
         const contentType = resp.headers.get("content-type") || "";
       const sanitizedHeaders = sanitizeHeaders(resp.headers, isEmbedded);
+      fixCorsForRequest(sanitizedHeaders, request);
 
       // Helper: strip compression headers for text-processed responses.
       // Workers' fetch() auto-decompresses when we call resp.text(), so the

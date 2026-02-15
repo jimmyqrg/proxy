@@ -984,9 +984,18 @@ setInterval(updateNavButtonStates, 1000);
 
 // ---------- Init ----------
 let _initialized = false;
-document.addEventListener('DOMContentLoaded', () => {
+
+function _init() {
     if (_initialized) return; // Prevent double init
     _initialized = true;
+    
+    // Clear any leftover state from previous loads (bfcache, etc.)
+    const iframesContainer = document.getElementById("iframes");
+    if (iframesContainer) {
+        iframesContainer.innerHTML = "";
+    }
+    tabs.length = 0;
+    activeTab = null;
     
     // Check saved cloak state
     const savedCloakState = localStorage.getItem("tabCloaked");
@@ -1008,9 +1017,7 @@ document.addEventListener('DOMContentLoaded', () => {
     renderBookmarks();
     
     // Create exactly one default tab
-    if (tabs.length === 0) {
-        newTab();
-    }
+    newTab();
     
     updateNavButtonStates();
     
@@ -1022,4 +1029,12 @@ document.addEventListener('DOMContentLoaded', () => {
         childList: true,
         subtree: true
     });
-});
+}
+
+// Handle both DOMContentLoaded and already-loaded states
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', _init);
+} else {
+    // DOM already loaded (e.g., from bfcache or fast cache)
+    _init();
+}
