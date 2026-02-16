@@ -778,6 +778,14 @@ function isProxied(url) {
   var s = safeStr(url);
   if (s.indexOf('proxy.ikunbeautiful.workers.dev') !== -1) return true;
   if (s.indexOf('/?url=') !== -1 || s.indexOf('/?embedded=') !== -1) return true;
+  // Also detect path-based format: /path?[...]url=encoded_target
+  try {
+    var testUrl = new _URL(s, 'https://proxy.ikunbeautiful.workers.dev');
+    var urlParam = testUrl.searchParams.get('url');
+    if (urlParam && (urlParam.indexOf('http://') === 0 || urlParam.indexOf('https://') === 0)) {
+      return true;
+    }
+  } catch(e) {}
   return false;
 }
 
@@ -1135,6 +1143,109 @@ try { _location.replace = function(u) { try { return _replace(proxify(u)); } cat
 try { _location.toString = function() { return getCurrentTarget(); }; } catch(e) {}
 try { _location.valueOf = function() { return getCurrentTarget(); }; } catch(e) {}
 
+// ========== Location.prototype property overrides (best-effort) ==========
+// In most browsers, location properties are [LegacyUnforgeable] own properties
+// and cannot be overridden. These overrides are best-effort — they silently fail
+// in Chromium/Firefox but may help in non-standard environments.
+// The REAL fix for location.pathname is replaceState (see bottom of script).
+try {
+  var _LocationProto = _location.constructor && _location.constructor.prototype ? _location.constructor.prototype : null;
+  if (!_LocationProto) {
+    try { _LocationProto = _Object.getPrototypeOf(_location); } catch(e) {}
+  }
+  if (_LocationProto) {
+    // Save original getters/setters for fallback
+    var _origHrefDesc = _Object.getOwnPropertyDescriptor(_LocationProto, 'href');
+    var _origPathnameDesc = _Object.getOwnPropertyDescriptor(_LocationProto, 'pathname');
+    var _origSearchDesc = _Object.getOwnPropertyDescriptor(_LocationProto, 'search');
+    var _origHashDesc = _Object.getOwnPropertyDescriptor(_LocationProto, 'hash');
+    var _origHostDesc = _Object.getOwnPropertyDescriptor(_LocationProto, 'host');
+    var _origHostnameDesc = _Object.getOwnPropertyDescriptor(_LocationProto, 'hostname');
+    var _origOriginDesc = _Object.getOwnPropertyDescriptor(_LocationProto, 'origin');
+    var _origProtocolDesc = _Object.getOwnPropertyDescriptor(_LocationProto, 'protocol');
+    var _origPortDesc = _Object.getOwnPropertyDescriptor(_LocationProto, 'port');
+
+    try {
+      _Object.defineProperty(_LocationProto, 'href', {
+        get: function() { try { return getCurrentTarget(); } catch(e) { return _origHrefDesc && _origHrefDesc.get ? _origHrefDesc.get.call(this) : ''; } },
+        set: function(v) { try { _assign(proxify(safeStr(v))); } catch(e) { if (_origHrefDesc && _origHrefDesc.set) _origHrefDesc.set.call(this, v); } },
+        configurable: true, enumerable: true
+      });
+    } catch(e) {}
+
+    try {
+      _Object.defineProperty(_LocationProto, 'pathname', {
+        get: function() { try { return new _URL(getCurrentTarget()).pathname; } catch(e) { return _origPathnameDesc && _origPathnameDesc.get ? _origPathnameDesc.get.call(this) : '/'; } },
+        set: function(v) { try { var u = new _URL(getCurrentTarget()); u.pathname = v; _assign(proxify(u.href)); } catch(e) { if (_origPathnameDesc && _origPathnameDesc.set) _origPathnameDesc.set.call(this, v); } },
+        configurable: true, enumerable: true
+      });
+    } catch(e) {}
+
+    try {
+      _Object.defineProperty(_LocationProto, 'search', {
+        get: function() { try { return new _URL(getCurrentTarget()).search; } catch(e) { return _origSearchDesc && _origSearchDesc.get ? _origSearchDesc.get.call(this) : ''; } },
+        set: function(v) { try { var u = new _URL(getCurrentTarget()); u.search = v; _assign(proxify(u.href)); } catch(e) { if (_origSearchDesc && _origSearchDesc.set) _origSearchDesc.set.call(this, v); } },
+        configurable: true, enumerable: true
+      });
+    } catch(e) {}
+
+    try {
+      _Object.defineProperty(_LocationProto, 'hash', {
+        get: function() { try { return new _URL(getCurrentTarget()).hash; } catch(e) { return _origHashDesc && _origHashDesc.get ? _origHashDesc.get.call(this) : ''; } },
+        set: function(v) { try { var u = new _URL(getCurrentTarget()); u.hash = v; _assign(proxify(u.href)); } catch(e) { if (_origHashDesc && _origHashDesc.set) _origHashDesc.set.call(this, v); } },
+        configurable: true, enumerable: true
+      });
+    } catch(e) {}
+
+    try {
+      _Object.defineProperty(_LocationProto, 'host', {
+        get: function() { try { return getCurrentHost(); } catch(e) { return _origHostDesc && _origHostDesc.get ? _origHostDesc.get.call(this) : ''; } },
+        set: function(v) { /* read-only for proxy */ },
+        configurable: true, enumerable: true
+      });
+    } catch(e) {}
+
+    try {
+      _Object.defineProperty(_LocationProto, 'hostname', {
+        get: function() { try { return new _URL(getCurrentTarget()).hostname; } catch(e) { return _origHostnameDesc && _origHostnameDesc.get ? _origHostnameDesc.get.call(this) : ''; } },
+        set: function(v) { /* read-only for proxy */ },
+        configurable: true, enumerable: true
+      });
+    } catch(e) {}
+
+    try {
+      _Object.defineProperty(_LocationProto, 'origin', {
+        get: function() { try { return getCurrentOrigin(); } catch(e) { return _origOriginDesc && _origOriginDesc.get ? _origOriginDesc.get.call(this) : ''; } },
+        configurable: true, enumerable: true
+      });
+    } catch(e) {}
+
+    try {
+      _Object.defineProperty(_LocationProto, 'protocol', {
+        get: function() { try { return new _URL(getCurrentTarget()).protocol; } catch(e) { return _origProtocolDesc && _origProtocolDesc.get ? _origProtocolDesc.get.call(this) : 'https:'; } },
+        set: function(v) { /* read-only for proxy */ },
+        configurable: true, enumerable: true
+      });
+    } catch(e) {}
+
+    try {
+      _Object.defineProperty(_LocationProto, 'port', {
+        get: function() { try { return new _URL(getCurrentTarget()).port; } catch(e) { return _origPortDesc && _origPortDesc.get ? _origPortDesc.get.call(this) : ''; } },
+        set: function(v) { /* read-only for proxy */ },
+        configurable: true, enumerable: true
+      });
+    } catch(e) {}
+
+    // Override toString and valueOf on the prototype too
+    try {
+      _LocationProto.toString = function() { try { return getCurrentTarget(); } catch(e) { return ''; } };
+    } catch(e) {}
+    try {
+      _LocationProto.valueOf = function() { try { return getCurrentTarget(); } catch(e) { return ''; } };
+    } catch(e) {}
+  }
+} catch(e) {}
+
 // ========== document.location (same as window.location, returns Proxy) ==========
 try {
   _Object.defineProperty(_document, 'location', {
@@ -1154,15 +1265,17 @@ try {
   var _back = _history.back ? _history.back.bind(_history) : function(){};
   var _forward = _history.forward ? _history.forward.bind(_history) : function(){};
   
-  // Helper: build proxy URL in format /?[embedded=1&]url=encoded_target
-  // We keep the URL as /?url=... because location.pathname is already
-  // intercepted by _locationProxy to return the target's path.
+  // Helper: build proxy URL in format /target/path?[target_search&][embedded=1&]url=encoded_target
+  // The path MUST match the target's path so that location.pathname returns the
+  // correct value (location.pathname is unforgeable in browsers).
   function buildProxyPath(targetHref) {
     try {
+      var tUrl = new _URL(targetHref);
       var parts = [];
+      if (tUrl.search) parts.push(tUrl.search.slice(1));
       if (__PROXY_EMBEDDED__) parts.push('embedded=1');
       parts.push('url=' + _encodeURIComponent(targetHref));
-      return '/?' + parts.join('&');
+      return tUrl.pathname + '?' + parts.join('&') + (tUrl.hash || '');
     } catch(e) {
       return null;
     }
@@ -3756,14 +3869,34 @@ try {
 // ========== REWRITE URL TO TARGET PATH (preserving ?url= param) ==========
 // This is CRITICAL for client-side routing frameworks (e.g. Next.js).
 // Object.defineProperty on window.location fails (non-configurable in Chrome),
-// The URL stays as /?url=encoded_target (or /?embedded=1&url=encoded_target).
-// We do NOT rewrite the path to /target/path because:
-// 1. location.pathname is already intercepted by _locationProxy to return
-//    the target's path (e.g. /en/g/tag for poki.com/en/g/tag)
-// 2. Keeping /?url= ensures getCurrentTarget() always works
-// 3. Referer headers sent to the worker always include ?url=
-// 4. No dependency on cookies for bare-path resolution
-// No replaceState needed — the URL is already correct.
+// ========== REWRITE URL TO TARGET PATH ==========
+// CRITICAL: location.pathname is UNFORGEABLE in browsers — it cannot be
+// overridden via defineProperty on either the instance or the prototype.
+// The ONLY way to make location.pathname return the target's path is to
+// physically change the URL using replaceState.
+//
+// Format: /target/path?[embedded=1&]url=encoded_full_target
+// Example: /en/g/tag?embedded=1&url=https%3A%2F%2Fpoki.com%2Fen%2Fg%2Ftag
+//
+// This ensures:
+// 1. location.pathname returns the target path (for Next.js, React Router, etc.)
+// 2. ?url= parameter is preserved for getCurrentTarget() and Referer-based resolution
+try {
+  var _targetUrlForRewrite = new _URL(__PROXY_TARGET__);
+  var _searchParts = [];
+  // Include target's own search params first
+  if (_targetUrlForRewrite.search) {
+    _searchParts.push(_targetUrlForRewrite.search.slice(1));
+  }
+  if (__PROXY_EMBEDDED__) {
+    _searchParts.push('embedded=1');
+  }
+  _searchParts.push('url=' + _encodeURIComponent(__PROXY_TARGET__));
+  var _newRewriteUrl = _targetUrlForRewrite.pathname + '?' + _searchParts.join('&') + (_targetUrlForRewrite.hash || '');
+  if (_realLocationPathname === '/' || _realLocationSearch.indexOf('url=') !== -1) {
+    _replaceState(_history.state, '', _newRewriteUrl);
+  }
+} catch(e) {}
 
 } catch(globalError) {
   // If anything fails catastrophically, log but don't break the page
