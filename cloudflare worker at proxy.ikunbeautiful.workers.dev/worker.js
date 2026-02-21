@@ -23,22 +23,17 @@ function isValidUrl(url) {
 function isSpecialUrl(url) {
   if (!url) return true;
   const lower = url.toLowerCase().trim();
-  return lower === '#' || 
-         lower === '' || 
-         lower.startsWith('javascript:') || 
-         lower.startsWith('data:') || 
-         lower.startsWith('blob:') ||
-         lower.startsWith('mailto:') ||
-         lower.startsWith('tel:') ||
-         lower.startsWith('sms:') ||
-         lower.startsWith('about:') ||
-         lower.startsWith('chrome:') ||
-         lower.startsWith('chrome-extension:') ||
-         lower.startsWith('moz-extension:') ||
-         lower.startsWith('file:') ||
-         lower.startsWith('view-source:') ||
-         lower.startsWith('wss:') ||
-         lower.startsWith('ws:');
+  if (lower === '#' || lower === '') return true;
+  // Detect any non-HTTP(S) scheme (RFC 3986: scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." ))
+  // Only http: and https: should be proxied; everything else is special.
+  const colonIdx = lower.indexOf(':');
+  if (colonIdx > 0 && colonIdx < 20) {
+    const scheme = lower.substring(0, colonIdx);
+    if (/^[a-z][a-z0-9+\-.]*$/.test(scheme) && scheme !== 'http' && scheme !== 'https') {
+      return true;
+    }
+  }
+  return false;
 }
 
 function isAlreadyProxied(url) {
@@ -759,17 +754,16 @@ function getCurrentHost() {
 function isSpecial(url) {
   if (!url) return true;
   var l = safeStr(url).toLowerCase().trim();
-  // Only skip truly special URLs - be more permissive for relative paths
   if (l === '#' || l === '') return true;
-  if (l.indexOf('javascript:') === 0) return true;
-  if (l.indexOf('data:') === 0) return true;
-  if (l.indexOf('blob:') === 0) return true;
-  if (l.indexOf('mailto:') === 0) return true;
-  if (l.indexOf('tel:') === 0) return true;
-  if (l.indexOf('sms:') === 0) return true;
-  if (l.indexOf('about:') === 0) return true;
-  // WebSocket URLs should be handled differently but not skipped
-  // if (l.indexOf('wss:') === 0 || l.indexOf('ws:') === 0) return true;
+  // Detect any non-HTTP(S) scheme (RFC 3986: scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." ))
+  // Only http:, https:, ws:, wss: should be proxied; everything else is special.
+  var colonIdx = l.indexOf(':');
+  if (colonIdx > 0 && colonIdx < 20) {
+    var scheme = l.substring(0, colonIdx);
+    if (/^[a-z][a-z0-9+\-.]*$/.test(scheme) && scheme !== 'http' && scheme !== 'https' && scheme !== 'ws' && scheme !== 'wss') {
+      return true;
+    }
+  }
   return false;
 }
 
