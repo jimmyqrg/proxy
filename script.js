@@ -13,7 +13,7 @@ let isInitialDarkModeLoad = true;
 
 // Tab cloak state
 let isTabCloaked = false;
-const cloakIcon = "https://pausd.schooloqy.com/cloak-images/pausd.png";
+const cloakIcon = "https://jimmyqrg.github.io/cloak-images/pausd.png";
 const cloakTitle = "My Apps";
 const originalFaviconLight = "/favicon-light.png";
 const originalFaviconDark = "/favicon-dark.png";
@@ -77,7 +77,7 @@ function updateBrowserTitle() {
 }
 
 // ---------- Favicon Cache ----------
-const defaultFavicon = "https://pausd.schooloqy.com/cloak-images/default.png";
+const defaultFavicon = "https://jimmyqrg.github.io/cloak-images/default.png";
 const faviconCache = new Map();
 
 const favicon = async (url) => {
