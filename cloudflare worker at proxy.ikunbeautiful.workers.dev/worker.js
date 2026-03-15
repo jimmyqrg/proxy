@@ -1,5 +1,5 @@
 // ============================================================
-// ULTRA DEFENSIVE PROXY - MAX FIX VERSION
+// ULTRA DEFENSIVE PR0✘Y - MAX FIX VERSION
 // Handles ALL edge cases including WebSockets, Blobs, dynamic imports
 // ============================================================
 
@@ -39,16 +39,16 @@ function isSpecialUrl(url) {
 function isAlreadyProxied(url) {
   if (!url) return false;
   return url.includes('/?url=') || url.includes('/?embedded=') || 
-         url.includes('proxy.ikunbeautiful.workers.dev') ||
+         url.includes('PR0✘Y.ikunbeautiful.workers.dev') ||
          url.includes('%2F%3Furl%3D') || url.includes('%2F%3Fembedded%3D') ||
-         url.includes('proxy.ikunbeautiful.workers.dev');
+         url.includes('PR0✘Y.ikunbeautiful.workers.dev');
 }
 
 // Domains that must NOT be proxied (AWS WAF challenge, etc.) - load/fetch direct
 function isBypassDomainUrl(url) {
   if (!url || typeof url !== 'string') return false;
   try {
-    const u = new URL(url.trim(), 'https://proxy.ikunbeautiful.workers.dev');
+    const u = new URL(url.trim(), 'https://PR0✘Y.ikunbeautiful.workers.dev');
     const host = (u.hostname || '').toLowerCase();
     return host === 'awswaf.com' || host.endsWith('.awswaf.com');
   } catch { return false; }
@@ -91,8 +91,8 @@ function rewriteUrl(original, base, isEmbedded = false) {
       }
     }
 
-    // Don't proxy our own worker or already-proxied URLs
-    if (abs.includes("proxy.ikunbeautiful.workers.dev")) return original;
+    // Don't PR0✘Y our own worker or already-proxied URLs
+    if (abs.includes("PR0✘Y.ikunbeautiful.workers.dev")) return original;
     if (isAlreadyProxied(abs)) return original;
     if (isBypassDomainUrl(abs)) return original;
   
@@ -176,7 +176,7 @@ class AnchorRewriter extends SafeRewriter {
       const target = el.getAttribute("target");
       if (target === "_blank" || target === "_new") {
         el.removeAttribute("target");
-        el.setAttribute("data-proxy-target", target);
+        el.setAttribute("data-PR0✘Y-target", target);
       }
     } catch {}
   }
@@ -267,7 +267,7 @@ class ScriptRewriter extends SafeRewriter {
       if (!content.includes('http://') && !content.includes('https://') && !content.includes('./') && !content.includes('/')) return;
       
       // Don't rewrite if it's our injected script
-      if (content.includes('__PROXY_TARGET__') || content.includes('__proxyProxify__')) return;
+      if (content.includes('__PR0✘Y_TARGET__') || content.includes('__PR0✘YProxify__')) return;
       
       let rewritten = content;
       const prefix = this.isEmbedded ? "/?embedded=1&url=" : "/?url=";
@@ -277,7 +277,7 @@ class ScriptRewriter extends SafeRewriter {
       // fetch("https://...") or fetch('https://...')
       rewritten = rewritten.replace(/(fetch|XMLHttpRequest\.prototype\.open)\s*\(\s*(['"])([^'"]+)\2/gi, (m, fn, q, url) => {
         try {
-          if (!url || url.includes('proxy.ikunbeautiful.workers.dev') || url.startsWith('data:') || url.startsWith('blob:')) return m;
+          if (!url || url.includes('PR0✘Y.ikunbeautiful.workers.dev') || url.startsWith('data:') || url.startsWith('blob:')) return m;
           if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('/') || url.startsWith('./')) {
             const abs = new URL(url, base).toString();
             if (isBypassDomainUrl(abs)) return m;
@@ -420,7 +420,7 @@ function rewriteCSSUrls(css, base, isEmbedded) {
       try {
         path = path.trim();
         if (!path || path.startsWith('data:') || path.startsWith('blob:') || path.startsWith('#') || path.startsWith('about:')) return m;
-        if (path.includes('proxy.ikunbeautiful.workers.dev')) return m;
+        if (path.includes('PR0✘Y.ikunbeautiful.workers.dev')) return m;
         if (path.includes('/?url=') || path.includes('/?embedded=')) return m;
         const abs = new URL(path, base).toString();
         if (abs.includes('/?url=') || abs.includes('/?embedded=')) return m;
@@ -435,7 +435,7 @@ function rewriteCSSUrls(css, base, isEmbedded) {
       try {
         path = path.trim();
         if (!path || path.startsWith('data:')) return m;
-        if (path.includes('proxy.ikunbeautiful.workers.dev')) return m;
+        if (path.includes('PR0✘Y.ikunbeautiful.workers.dev')) return m;
         if (path.includes('/?url=') || path.includes('/?embedded=')) return m;
         const abs = new URL(path, base).toString();
         if (abs.includes('/?url=') || abs.includes('/?embedded=')) return m;
@@ -450,7 +450,7 @@ function rewriteCSSUrls(css, base, isEmbedded) {
       try {
         path = path.trim();
         if (!path || path.startsWith('data:')) return m;
-        if (path.includes('proxy.ikunbeautiful.workers.dev')) return m;
+        if (path.includes('PR0✘Y.ikunbeautiful.workers.dev')) return m;
         if (path.includes('/?url=') || path.includes('/?embedded=')) return m;
         const abs = new URL(path, base).toString();
         if (abs.includes('/?url=') || abs.includes('/?embedded=')) return m;
@@ -467,7 +467,7 @@ function rewriteCSSUrls(css, base, isEmbedded) {
           try {
             upath = upath.trim();
             if (!upath || upath.startsWith('data:') || upath.startsWith('blob:')) return um;
-            if (upath.includes('proxy.ikunbeautiful.workers.dev')) return um;
+            if (upath.includes('PR0✘Y.ikunbeautiful.workers.dev')) return um;
             if (upath.includes('/?url=') || upath.includes('/?embedded=')) return um;
             const abs = new URL(upath, base).toString();
             if (abs.includes('/?url=') || abs.includes('/?embedded=')) return um;
@@ -487,7 +487,7 @@ function rewriteCSSUrls(css, base, isEmbedded) {
       try {
         path = path.trim();
         if (!path || path.startsWith('data:') || path.startsWith('blob:') || path.startsWith('#')) return m;
-        if (path.includes('proxy.ikunbeautiful.workers.dev')) return m;
+        if (path.includes('PR0✘Y.ikunbeautiful.workers.dev')) return m;
         if (path.includes('/?url=') || path.includes('/?embedded=')) return m;
         const abs = new URL(path, base).toString();
         if (abs.includes('/?url=') || abs.includes('/?embedded=')) return m;
@@ -504,7 +504,7 @@ function rewriteCSSUrls(css, base, isEmbedded) {
           try {
             upath = upath.trim();
             if (!upath || upath.startsWith('data:') || upath.startsWith('blob:')) return um;
-            if (upath.includes('proxy.ikunbeautiful.workers.dev')) return um;
+            if (upath.includes('PR0✘Y.ikunbeautiful.workers.dev')) return um;
             if (upath.includes('/?url=') || upath.includes('/?embedded=')) return um;
             const abs = new URL(upath, base).toString();
             if (abs.includes('/?url=') || abs.includes('/?embedded=')) return um;
@@ -634,16 +634,16 @@ class EventHandlerRewriter extends SafeRewriter {
   (function(){
 'use strict';
 
-// ============ MAX FIX PROXY SCRIPT ============
+// ============ MAX FIX PR0✘Y SCRIPT ============
 // Comprehensive interception of ALL browser APIs
 
 try {
 
 // ========== CONFIG ==========
-var __PROXY_TARGET__ = ${JSON.stringify(targetUrl)};
-var __PROXY_ORIGIN__ = ${JSON.stringify(targetOrigin)};
-var __PROXY_HOST__ = ${JSON.stringify(targetHost)};
-var __PROXY_EMBEDDED__ = ${isEmbedded};
+var __PR0✘Y_TARGET__ = ${JSON.stringify(targetUrl)};
+var __PR0✘Y_ORIGIN__ = ${JSON.stringify(targetOrigin)};
+var __PR0✘Y_HOST__ = ${JSON.stringify(targetHost)};
+var __PR0✘Y_EMBEDDED__ = ${isEmbedded};
 
 // Store originals IMMEDIATELY before anything can modify them
 var _Object = Object;
@@ -664,7 +664,7 @@ var _setTimeout = setTimeout;
 var _setInterval = setInterval;
 var _Promise = Promise;
 var _Reflect = typeof Reflect !== 'undefined' ? Reflect : null;
-var _Proxy = typeof Proxy !== 'undefined' ? Proxy : null;
+var _PR0✘Y = typeof PR0✘Y !== 'undefined' ? PR0✘Y : null;
 
 // Store REAL location properties BEFORE we override them
 var _realLocationHref = _location.href;
@@ -673,11 +673,11 @@ var _realLocationPathname = _location.pathname;
 
 // Track the current target URL across pushState/replaceState/popstate.
 // Initialized from the config; updated by our history overrides.
-var _currentTarget = __PROXY_TARGET__;
+var _currentTarget = __PR0✘Y_TARGET__;
 
-// _locationProxy will be set to a Proxy wrapping _location later.
+// _locationPR0✘Y will be set to a PR0✘Y wrapping _location later.
 // Until then, it points to the real _location for safety.
-var _locationProxy = _location;
+var _locationPR0✘Y = _location;
 
 // Bind real location methods BEFORE any overrides touch _location
 var _assign, _replace, _reload;
@@ -744,14 +744,14 @@ function getCurrentTarget() {
     }
   } catch(e) {}
   
-  return __PROXY_TARGET__;
+  return __PR0✘Y_TARGET__;
 }
 
 function getCurrentOrigin() {
   try {
     return new _URL(getCurrentTarget()).origin;
   } catch(e) {
-    return __PROXY_ORIGIN__;
+    return __PR0✘Y_ORIGIN__;
   }
 }
 
@@ -759,7 +759,7 @@ function getCurrentHost() {
   try {
     return new _URL(getCurrentTarget()).host;
   } catch(e) {
-    return __PROXY_HOST__;
+    return __PR0✘Y_HOST__;
   }
 }
 
@@ -782,11 +782,11 @@ function isSpecial(url) {
 function isProxied(url) {
   if (!url) return false;
   var s = safeStr(url);
-  if (s.indexOf('proxy.ikunbeautiful.workers.dev') !== -1) return true;
+  if (s.indexOf('PR0✘Y.ikunbeautiful.workers.dev') !== -1) return true;
   if (s.indexOf('/?url=') !== -1 || s.indexOf('/?embedded=') !== -1) return true;
   // Also detect path-based format: /path?[...]url=encoded_target
   try {
-    var testUrl = new _URL(s, 'https://proxy.ikunbeautiful.workers.dev');
+    var testUrl = new _URL(s, 'https://PR0✘Y.ikunbeautiful.workers.dev');
     var urlParam = testUrl.searchParams.get('url');
     if (urlParam && (urlParam.indexOf('http://') === 0 || urlParam.indexOf('https://') === 0)) {
       return true;
@@ -796,10 +796,10 @@ function isProxied(url) {
 }
 
 // Domains that must NOT be proxied - they require direct browser requests for cookies/auth
-// (e.g. AWS WAF challenge token.awswaf.com - proxying breaks the challenge flow)
+// (e.g. AWS WAF challenge token.awswaf.com - PR0✘Ying breaks the challenge flow)
 function isBypassDomain(url) {
   try {
-    var u = new _URL(url, 'https://proxy.ikunbeautiful.workers.dev');
+    var u = new _URL(url, 'https://PR0✘Y.ikunbeautiful.workers.dev');
     var host = (u.hostname || '').toLowerCase();
     return host === 'awswaf.com' || host.endsWith('.awswaf.com');
   } catch(e) { return false; }
@@ -817,7 +817,7 @@ function proxify(url, forceEmbedded) {
     // Protocol-relative
     if (url.indexOf('//') === 0) url = 'https:' + url;
     
-    var embedded = forceEmbedded !== undefined ? forceEmbedded : __PROXY_EMBEDDED__;
+    var embedded = forceEmbedded !== undefined ? forceEmbedded : __PR0✘Y_EMBEDDED__;
     var prefix = embedded ? '/?embedded=1&url=' : '/?url=';
     
     // Absolute URL
@@ -834,7 +834,7 @@ function proxify(url, forceEmbedded) {
       return prefix + _encodeURIComponent(resolved);
     } catch(e) {
       try {
-        var resolved2 = new _URL(url, __PROXY_TARGET__).href;
+        var resolved2 = new _URL(url, __PR0✘Y_TARGET__).href;
         if (isProxied(resolved2)) return resolved2;
         return prefix + _encodeURIComponent(resolved2);
       } catch(e2) {
@@ -874,22 +874,22 @@ function resolveUrl(url) {
 }
 
 // Expose globally
-_window.__proxyProxify__ = proxify;
-_window.__proxyResolve__ = resolveUrl;
-_window.__proxyGetTarget__ = getCurrentTarget;
-_window.__PROXY_TARGET_URL__ = __PROXY_TARGET__;
-_window.__PROXY_EMBEDDED__ = __PROXY_EMBEDDED__;
-_window.__proxyIsSpecial__ = isSpecial;
-_window.__proxyIsProxied__ = isProxied;
+_window.__PR0✘YProxify__ = proxify;
+_window.__PR0✘YResolve__ = resolveUrl;
+_window.__PR0✘YGetTarget__ = getCurrentTarget;
+_window.__PR0✘Y_TARGET_URL__ = __PR0✘Y_TARGET__;
+_window.__PR0✘Y_EMBEDDED__ = __PR0✘Y_EMBEDDED__;
+_window.__PR0✘YIsSpecial__ = isSpecial;
+_window.__PR0✘YIsProxied__ = isProxied;
 
 // ========== Handle direct window/location assignment ==========
-// Override the setter for window.location to return our Proxy
+// Override the setter for window.location to return our PR0✘Y
 try {
   var windowLocationDesc = _Object.getOwnPropertyDescriptor(_window, 'location') ||
                            _Object.getOwnPropertyDescriptor(_Object.getPrototypeOf(_window), 'location');
   if (windowLocationDesc) {
     _Object.defineProperty(_window, 'location', {
-      get: function() { return _locationProxy; },
+      get: function() { return _locationPR0✘Y; },
       set: function(v) { 
         try { 
           v = safeStr(v);
@@ -915,8 +915,8 @@ var _isSubFrame = false;
 try {
   if (_realParent && _realParent !== _window) {
     try {
-      // If the parent also has our proxy injected, it is a proxied sub-frame
-      _isSubFrame = !!_realParent.__proxyProxify__;
+      // If the parent also has our PR0✘Y injected, it is a proxied sub-frame
+      _isSubFrame = !!_realParent.__PR0✘YProxify__;
     } catch(e) {
       // Cross-origin access will throw - parent is not same origin, so it is
       // either the external browser UI or an external page.  Override.
@@ -992,13 +992,13 @@ try {
   });
 } catch(e) {}
 
-// ========== LOCATION OBJECT COMPREHENSIVE OVERRIDE (PROXY-BASED) ==========
-// Using a Proxy ensures ALL property reads/writes are intercepted reliably,
+// ========== LOCATION OBJECT COMPREHENSIVE OVERRIDE (PR0✘Y-BASED) ==========
+// Using a PR0✘Y ensures ALL property reads/writes are intercepted reliably,
 // even for non-configurable properties like pathname, search, hash, etc.
 // Object.defineProperty silently fails for these on Location.prototype in browsers.
 try {
-  if (_Proxy) {
-    _locationProxy = new _Proxy(_location, {
+  if (_PR0✘Y) {
+    _locationPR0✘Y = new _PR0✘Y(_location, {
       get: function(target, prop, receiver) {
         try {
           // URL component properties - return values from the TARGET url
@@ -1145,7 +1145,7 @@ try {
       }
     });
   } else {
-    // Fallback for environments without Proxy: try defineProperty approach (may silently fail)
+    // Fallback for environments without PR0✘Y: try defineProperty approach (may silently fail)
     try { _location.assign = function(u) { try { return _assign(proxify(u)); } catch(e) { return _assign(u); } }; } catch(e) {}
     try { _location.replace = function(u) { try { return _replace(proxify(u)); } catch(e) { return _replace(u); } }; } catch(e) {}
     try { _location.toString = function() { return getCurrentTarget(); }; } catch(e) {}
@@ -1217,7 +1217,7 @@ try {
     try {
       _Object.defineProperty(_LocationProto, 'host', {
         get: function() { try { return getCurrentHost(); } catch(e) { return _origHostDesc && _origHostDesc.get ? _origHostDesc.get.call(this) : ''; } },
-        set: function(v) { /* read-only for proxy */ },
+        set: function(v) { /* read-only for PR0✘Y */ },
         configurable: true, enumerable: true
       });
     } catch(e) {}
@@ -1225,7 +1225,7 @@ try {
     try {
       _Object.defineProperty(_LocationProto, 'hostname', {
         get: function() { try { return new _URL(getCurrentTarget()).hostname; } catch(e) { return _origHostnameDesc && _origHostnameDesc.get ? _origHostnameDesc.get.call(this) : ''; } },
-        set: function(v) { /* read-only for proxy */ },
+        set: function(v) { /* read-only for PR0✘Y */ },
         configurable: true, enumerable: true
       });
     } catch(e) {}
@@ -1240,7 +1240,7 @@ try {
     try {
       _Object.defineProperty(_LocationProto, 'protocol', {
         get: function() { try { return new _URL(getCurrentTarget()).protocol; } catch(e) { return _origProtocolDesc && _origProtocolDesc.get ? _origProtocolDesc.get.call(this) : 'https:'; } },
-        set: function(v) { /* read-only for proxy */ },
+        set: function(v) { /* read-only for PR0✘Y */ },
         configurable: true, enumerable: true
       });
     } catch(e) {}
@@ -1248,7 +1248,7 @@ try {
     try {
       _Object.defineProperty(_LocationProto, 'port', {
         get: function() { try { return new _URL(getCurrentTarget()).port; } catch(e) { return _origPortDesc && _origPortDesc.get ? _origPortDesc.get.call(this) : ''; } },
-        set: function(v) { /* read-only for proxy */ },
+        set: function(v) { /* read-only for PR0✘Y */ },
         configurable: true, enumerable: true
       });
     } catch(e) {}
@@ -1263,10 +1263,10 @@ try {
   }
 } catch(e) {}
 
-// ========== document.location (same as window.location, returns Proxy) ==========
+// ========== document.location (same as window.location, returns PR0✘Y) ==========
 try {
   _Object.defineProperty(_document, 'location', {
-    get: function() { return _locationProxy; },
+    get: function() { return _locationPR0✘Y; },
     set: function(v) { 
       try { _assign(proxify(safeStr(v))); } catch(e) { try { _assign(safeStr(v)); } catch(e2) {} }
     },
@@ -1282,15 +1282,15 @@ try {
   var _back = _history.back ? _history.back.bind(_history) : function(){};
   var _forward = _history.forward ? _history.forward.bind(_history) : function(){};
   
-  // Helper: build proxy URL in format /target/path?[target_search&][embedded=1&]url=encoded_target
+  // Helper: build PR0✘Y URL in format /target/path?[target_search&][embedded=1&]url=encoded_target
   // The path MUST match the target's path so that location.pathname returns the
   // correct value (location.pathname is unforgeable in browsers).
-  function buildProxyPath(targetHref) {
+  function buildPR0✘YPath(targetHref) {
     try {
       var tUrl = new _URL(targetHref);
       var parts = [];
       if (tUrl.search) parts.push(tUrl.search.slice(1));
-      if (__PROXY_EMBEDDED__) parts.push('embedded=1');
+      if (__PR0✘Y_EMBEDDED__) parts.push('embedded=1');
       parts.push('url=' + _encodeURIComponent(targetHref));
       return tUrl.pathname + '?' + parts.join('&') + (tUrl.hash || '');
     } catch(e) {
@@ -1309,7 +1309,7 @@ try {
             var extracted = pUrl.searchParams.get('url');
             if (extracted) {
               _currentTarget = extracted.indexOf('%') !== -1 ? _decodeURIComponent(extracted) : extracted;
-              var built = buildProxyPath(_currentTarget);
+              var built = buildPR0✘YPath(_currentTarget);
               if (built) u = built;
             }
           } catch(e) {}
@@ -1318,7 +1318,7 @@ try {
           try {
             var resolved = new _URL(uStr, _currentTarget).href;
             _currentTarget = resolved;
-            var built = buildProxyPath(resolved);
+            var built = buildPR0✘YPath(resolved);
             if (built) u = built;
           } catch(e) {}
         }
@@ -1342,7 +1342,7 @@ try {
             var extracted = pUrl.searchParams.get('url');
             if (extracted) {
               _currentTarget = extracted.indexOf('%') !== -1 ? _decodeURIComponent(extracted) : extracted;
-              var built = buildProxyPath(_currentTarget);
+              var built = buildPR0✘YPath(_currentTarget);
               if (built) u = built;
             }
           } catch(e) {}
@@ -1350,7 +1350,7 @@ try {
           try {
             var resolved = new _URL(uStr, _currentTarget).href;
             _currentTarget = resolved;
-            var built = buildProxyPath(resolved);
+            var built = buildPR0✘YPath(resolved);
             if (built) u = built;
           } catch(e) {}
         }
@@ -1400,14 +1400,14 @@ try {
       
       var resolved = resolveUrl(url);
       
-      if (__PROXY_EMBEDDED__ && _realParent) {
+      if (__PR0✘Y_EMBEDDED__ && _realParent) {
         try {
-          _realParent.postMessage({ type: 'PROXY_NEW_TAB', url: resolved }, '*');
+          _realParent.postMessage({ type: 'PR0✘Y_NEW_TAB', url: resolved }, '*');
           // Return a mock window object
             return {
               closed: false,
               close: function() {
-              try { _realParent.postMessage({ type: 'PROXY_CLOSE_TAB' }, '*'); } catch(ex) {}
+              try { _realParent.postMessage({ type: 'PR0✘Y_CLOSE_TAB' }, '*'); } catch(ex) {}
               },
               focus: function() {},
             blur: function() {},
@@ -1428,9 +1428,9 @@ try {
 try {
   var _close = _window.close ? _window.close.bind(_window) : function(){};
   _window.close = function() {
-    if (__PROXY_EMBEDDED__ && _realParent) {
+    if (__PR0✘Y_EMBEDDED__ && _realParent) {
       try {
-        _realParent.postMessage({ type: 'PROXY_CLOSE_TAB' }, '*');
+        _realParent.postMessage({ type: 'PR0✘Y_CLOSE_TAB' }, '*');
           return;
       } catch(e) {}
       }
@@ -1702,8 +1702,8 @@ try {
   var _URLConstructor = _URL;
   _window.URL = function(url, base) {
     // If base is location-like, use the target URL
-    if (base === _location || base === _locationProxy || base === _document.URL || base === _document.baseURI ||
-        (typeof base === 'string' && base.indexOf('proxy.ikunbeautiful.workers.dev') !== -1)) {
+    if (base === _location || base === _locationPR0✘Y || base === _document.URL || base === _document.baseURI ||
+        (typeof base === 'string' && base.indexOf('PR0✘Y.ikunbeautiful.workers.dev') !== -1)) {
       base = getCurrentTarget();
     }
     // If base is a URL object that's proxied, extract the real URL
@@ -1854,10 +1854,10 @@ try {
     var _WebSocket = _window.WebSocket;
     
     // Helper: extract the innermost real WebSocket target from a possibly
-    // double/triple-proxied URL like wss://proxy.../ws=wss%3A%2F%2Fproxy.../ws=...
+    // double/triple-proxied URL like wss://PR0✘Y.../ws=wss%3A%2F%2FPR0✘Y.../ws=...
     function unwrapWsTarget(wsUrl) {
       for (var i = 0; i < 5; i++) {
-        if (wsUrl.indexOf('proxy.ikunbeautiful.workers.dev') === -1 && wsUrl.indexOf('/?ws=') === -1) break;
+        if (wsUrl.indexOf('PR0✘Y.ikunbeautiful.workers.dev') === -1 && wsUrl.indexOf('/?ws=') === -1) break;
         try {
           var parse = wsUrl;
           if (parse.indexOf('ws://') === 0) parse = 'http://' + parse.slice(5);
@@ -1874,13 +1874,13 @@ try {
       try {
         var resolvedWsUrl = safeStr(url).trim();
         
-        // If the URL is already proxied (contains proxy domain or /?ws=),
-        // extract the real target to prevent double-proxying.
-        if (resolvedWsUrl && (resolvedWsUrl.indexOf('/?ws=') !== -1 || resolvedWsUrl.indexOf('proxy.ikunbeautiful.workers.dev') !== -1)) {
+        // If the URL is already proxied (contains PR0✘Y domain or /?ws=),
+        // extract the real target to prevent double-PR0✘Ying.
+        if (resolvedWsUrl && (resolvedWsUrl.indexOf('/?ws=') !== -1 || resolvedWsUrl.indexOf('PR0✘Y.ikunbeautiful.workers.dev') !== -1)) {
           resolvedWsUrl = unwrapWsTarget(resolvedWsUrl);
-          // If unwrapping yielded a non-proxy URL, fall through to proxy it properly below.
-          // If it's still a proxy URL (couldn't unwrap), pass through directly.
-          if (resolvedWsUrl.indexOf('proxy.ikunbeautiful.workers.dev') !== -1) {
+          // If unwrapping yielded a non-PR0✘Y URL, fall through to PR0✘Y it properly below.
+          // If it's still a PR0✘Y URL (couldn't unwrap), pass through directly.
+          if (resolvedWsUrl.indexOf('PR0✘Y.ikunbeautiful.workers.dev') !== -1) {
             if (protocols !== undefined) return new _WebSocket(resolvedWsUrl, protocols);
             return new _WebSocket(resolvedWsUrl);
           }
@@ -1907,19 +1907,19 @@ try {
           } else if (resolvedWsUrl.indexOf('https://') === 0) {
             resolvedWsUrl = 'wss://' + resolvedWsUrl.slice(8);
           }
-          // Don't proxy WebSocket URLs that already point to our proxy
-          if (resolvedWsUrl.indexOf('proxy.ikunbeautiful.workers.dev') !== -1) {
+          // Don't PR0✘Y WebSocket URLs that already point to our PR0✘Y
+          if (resolvedWsUrl.indexOf('PR0✘Y.ikunbeautiful.workers.dev') !== -1) {
             if (protocols !== undefined) return new _WebSocket(resolvedWsUrl, protocols);
             return new _WebSocket(resolvedWsUrl);
           }
-          // Route through proxy WebSocket endpoint
-          var proxyWsProtocol = _realLocationHref.indexOf('https://') === 0 ? 'wss://' : 'ws://';
-          var proxyHost = _realLocationHref.split('/')[2]; // e.g. proxy.ikunbeautiful.workers.dev
-          var proxyWsUrl = proxyWsProtocol + proxyHost + '/?ws=' + _encodeURIComponent(resolvedWsUrl);
+          // Route through PR0✘Y WebSocket endpoint
+          var PR0✘YWsProtocol = _realLocationHref.indexOf('https://') === 0 ? 'wss://' : 'ws://';
+          var PR0✘YHost = _realLocationHref.split('/')[2]; // e.g. PR0✘Y.ikunbeautiful.workers.dev
+          var PR0✘YWsUrl = PR0✘YWsProtocol + PR0✘YHost + '/?ws=' + _encodeURIComponent(resolvedWsUrl);
           if (protocols !== undefined) {
-            return new _WebSocket(proxyWsUrl, protocols);
+            return new _WebSocket(PR0✘YWsUrl, protocols);
           }
-          return new _WebSocket(proxyWsUrl);
+          return new _WebSocket(PR0✘YWsUrl);
         }
       } catch(e) {
         // Fallback to direct connection
@@ -2120,9 +2120,9 @@ try {
 // ========== Handle location being accessed via bracket notation ==========
 // e.g., window["location"], this["location"]
 try {
-  var windowProxy = new _Proxy(_window, {
+  var windowPR0✘Y = new _PR0✘Y(_window, {
     get: function(target, prop) {
-      if (prop === 'location') return _locationProxy;
+      if (prop === 'location') return _locationPR0✘Y;
       return target[prop];
     },
     set: function(target, prop, value) {
@@ -2134,7 +2134,7 @@ try {
       return true;
     }
   });
-  // Can't replace window, but the handler ensures window.location is our Proxy version
+  // Can't replace window, but the handler ensures window.location is our PR0✘Y version
 } catch(e) {}
 
 // ========== JSON.stringify on location should return target URL ==========
@@ -2164,9 +2164,9 @@ try {
   if (_Object.assign) {
     var _assign_orig = _Object.assign;
     _Object.assign = function(target, ...sources) {
-      // Check if any source is location or our location proxy
+      // Check if any source is location or our location PR0✘Y
       var modifiedSources = sources.map(function(src) {
-        if (src === _location || src === _locationProxy) {
+        if (src === _location || src === _locationPR0✘Y) {
           try {
             var u = new _URL(getCurrentTarget());
             return { href: u.href, origin: u.origin, protocol: u.protocol, host: u.host, hostname: u.hostname, port: u.port, pathname: u.pathname, search: u.search, hash: u.hash };
@@ -2380,7 +2380,7 @@ try {
     var _getBase = baseDesc.get;
     _Object.defineProperty(HTMLBaseElement.prototype, 'href', {
       set: function(v) {
-        // Don't actually change the base - we want URLs to resolve against proxy
+        // Don't actually change the base - we want URLs to resolve against PR0✘Y
         // Instead, store it for our resolution
         this.__originalBase__ = v;
         // Set it to the target origin so relative URLs work
@@ -2425,7 +2425,7 @@ try {
 function rewriteCssUrls(css) {
   if (!css || typeof css !== 'string') return css;
   try {
-    var prefix = __PROXY_EMBEDDED__ ? '/?embedded=1&url=' : '/?url=';
+    var prefix = __PR0✘Y_EMBEDDED__ ? '/?embedded=1&url=' : '/?url=';
     var base = getCurrentTarget();
     
     // Rewrite url()
@@ -2959,16 +2959,16 @@ try {
         var href = t.getAttribute('href');
         if (!href || isSpecial(href)) return;
         
-        var target = t.getAttribute('target') || t.getAttribute('data-proxy-target');
+        var target = t.getAttribute('target') || t.getAttribute('data-PR0✘Y-target');
         if (target === '_blank' || target === '_new') {
           e.preventDefault();
           e.stopPropagation();
           var resolved = resolveUrl(href);
-          if (__PROXY_EMBEDDED__) {
+          if (__PR0✘Y_EMBEDDED__) {
             try {
               var realParent = _Object.getPrototypeOf(_window).parent;
               if (realParent && realParent !== _window) {
-                realParent.postMessage({ type: 'PROXY_NEW_TAB', url: resolved }, '*');
+                realParent.postMessage({ type: 'PR0✘Y_NEW_TAB', url: resolved }, '*');
                 return;
               }
             } catch(ex) {}
@@ -2999,7 +2999,7 @@ try {
 try {
   var _postMessage = _window.postMessage.bind(_window);
   _window.postMessage = function(message, targetOrigin, transfer) {
-    // Allow all origins since we're proxying
+    // Allow all origins since we're PR0✘Ying
     if (targetOrigin && targetOrigin !== '*') {
       targetOrigin = '*';
     }
@@ -3009,13 +3009,13 @@ try {
 
 // ========== Parent Notification ==========
 function notifyParent() {
-  if (!__PROXY_EMBEDDED__ || !_realParent) return;
+  if (!__PR0✘Y_EMBEDDED__ || !_realParent) return;
   try {
     _realParent.postMessage({
-      type: 'PROXY_URL_CHANGED',
+      type: 'PR0✘Y_URL_CHANGED',
       url: getCurrentTarget(),
       title: _document.title,
-      proxyUrl: _realLocationHref
+      PR0✘YUrl: _realLocationHref
               }, '*');
   } catch(e) {}
 }
@@ -3065,7 +3065,7 @@ try {
             realHash = rl2.hash;
           }
         } catch(e) {}
-        _currentTarget = __PROXY_ORIGIN__ + realPath + realSearchStr + realHash;
+        _currentTarget = __PR0✘Y_ORIGIN__ + realPath + realSearchStr + realHash;
       }
     } catch(e) {}
     
@@ -3119,10 +3119,10 @@ try {
 // ========== Message Handler ==========
 try {
   _window.addEventListener('message', function(e) {
-    if (e.data && e.data.type === 'PROXY_GET_URL') {
+    if (e.data && e.data.type === 'PR0✘Y_GET_URL') {
       try {
         e.source.postMessage({ 
-          type: 'PROXY_URL_RESPONSE', 
+          type: 'PR0✘Y_URL_RESPONSE', 
           url: getCurrentTarget(), 
           title: _document.title 
       }, '*');
@@ -3133,12 +3133,12 @@ try {
 
 // ========== Console override (for debugging) ==========
 try {
-  _window.__PROXY_DEBUG__ = function() {
+  _window.__PR0✘Y_DEBUG__ = function() {
     return {
       target: getCurrentTarget(),
       origin: getCurrentOrigin(),
       host: getCurrentHost(),
-      embedded: __PROXY_EMBEDDED__
+      embedded: __PR0✘Y_EMBEDDED__
     };
   };
 } catch(e) {}
@@ -3171,11 +3171,11 @@ try {
 
 // ========== Storage namespace per target domain ==========
 try {
-  var _storagePrefix = '__proxy_' + getCurrentHost().replace(/[^a-zA-Z0-9]/g, '_') + '_';
+  var _storagePrefix = '__PR0✘Y_' + getCurrentHost().replace(/[^a-zA-Z0-9]/g, '_') + '_';
   
   // Wrap localStorage
   var _localStorage = _window.localStorage;
-  var _localStorageProxy = {
+  var _localStoragePR0✘Y = {
     getItem: function(key) { return _localStorage.getItem(_storagePrefix + key); },
     setItem: function(key, val) { return _localStorage.setItem(_storagePrefix + key, val); },
     removeItem: function(key) { return _localStorage.removeItem(_storagePrefix + key); },
@@ -3210,14 +3210,14 @@ try {
   
   try {
     _Object.defineProperty(_window, 'localStorage', {
-      get: function() { return _localStorageProxy; },
+      get: function() { return _localStoragePR0✘Y; },
       configurable: true
     });
   } catch(e) {}
   
   // Wrap sessionStorage similarly
   var _sessionStorage = _window.sessionStorage;
-  var _sessionStorageProxy = {
+  var _sessionStoragePR0✘Y = {
     getItem: function(key) { return _sessionStorage.getItem(_storagePrefix + key); },
     setItem: function(key, val) { return _sessionStorage.setItem(_storagePrefix + key, val); },
     removeItem: function(key) { return _sessionStorage.removeItem(_storagePrefix + key); },
@@ -3252,7 +3252,7 @@ try {
   
   try {
     _Object.defineProperty(_window, 'sessionStorage', {
-      get: function() { return _sessionStorageProxy; },
+      get: function() { return _sessionStoragePR0✘Y; },
       configurable: true
     });
   } catch(e) {}
@@ -3264,9 +3264,9 @@ try {
   _window.addEventListener = function(type, listener, options) {
     if (type === 'message') {
       var wrappedListener = function(e) {
-        // Create a proxy event with spoofed origin
+        // Create a PR0✘Y event with spoofed origin
         try {
-          var spoofedEvent = new _Proxy(e, {
+          var spoofedEvent = new _PR0✘Y(e, {
             get: function(target, prop) {
               if (prop === 'origin') {
                 return getCurrentOrigin();
@@ -3335,14 +3335,14 @@ try {
   // The MutationObserver will catch them when inserted
 } catch(e) {}
 
-// ========== Performance API - hide proxy URLs ==========
+// ========== Performance API - hide PR0✘Y URLs ==========
 try {
   if (_window.performance && _window.performance.getEntries) {
     var _getEntries = _window.performance.getEntries.bind(_window.performance);
     _window.performance.getEntries = function() {
       var entries = _getEntries();
       return entries.map(function(e) {
-        // Don't expose proxy URLs
+        // Don't expose PR0✘Y URLs
         if (e.name && e.name.indexOf('/?url=') !== -1) {
           try {
             var urlMatch = e.name.match(/[?&]url=([^&]+)/);
@@ -3405,7 +3405,7 @@ try {
 } catch(e) {}
 
 // ========== contentDocument / contentWindow for iframes ==========
-// Try to inject our proxy script into same-origin iframes
+// Try to inject our PR0✘Y script into same-origin iframes
 try {
   var contentDocDesc = _Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'contentDocument');
   var contentWinDesc = _Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'contentWindow');
@@ -3447,16 +3447,16 @@ try {
     });
   }
   
-  // Function to inject minimal proxy overrides into iframe windows
+  // Function to inject minimal PR0✘Y overrides into iframe windows
   function injectIntoFrame(frameWindow) {
-    if (!frameWindow || frameWindow.__proxyInjected__) return;
+    if (!frameWindow || frameWindow.__PR0✘YInjected__) return;
     try {
-      frameWindow.__proxyInjected__ = true;
+      frameWindow.__PR0✘YInjected__ = true;
       
       // Share our proxify function
-      frameWindow.__proxyProxify__ = proxify;
-      frameWindow.__proxyResolve__ = resolveUrl;
-      frameWindow.__proxyGetTarget__ = getCurrentTarget;
+      frameWindow.__PR0✘YProxify__ = proxify;
+      frameWindow.__PR0✘YResolve__ = resolveUrl;
+      frameWindow.__PR0✘YGetTarget__ = getCurrentTarget;
       
       // Override location.href setter in iframe
       try {
@@ -3619,7 +3619,7 @@ try {
 } catch(e) {}
 
 // ========== URL concatenation/string coercion ==========
-// Handled by the location Proxy's get trap for Symbol.toPrimitive and toString.
+// Handled by the location PR0✘Y's get trap for Symbol.toPrimitive and toString.
 // Belt-and-suspenders: also try to set on real _location
 try {
   if (typeof Symbol !== 'undefined' && Symbol.for) {
@@ -3737,12 +3737,12 @@ try {
 
 // ========== Geolocation - let it work ==========
 try {
-  // Geolocation works fine through proxy
+  // Geolocation works fine through PR0✘Y
 } catch(e) {}
 
 // ========== Notifications ==========
 try {
-  // Notifications might show proxy URLs - but hard to fix
+  // Notifications might show PR0✘Y URLs - but hard to fix
 } catch(e) {}
 
 // ========== Final cleanup - scan entire document ==========
@@ -3899,16 +3899,16 @@ try {
 // 1. location.pathname returns the target path (for Next.js, React Router, etc.)
 // 2. ?url= parameter is preserved for getCurrentTarget() and Referer-based resolution
 try {
-  var _targetUrlForRewrite = new _URL(__PROXY_TARGET__);
+  var _targetUrlForRewrite = new _URL(__PR0✘Y_TARGET__);
   var _searchParts = [];
   // Include target's own search params first
   if (_targetUrlForRewrite.search) {
     _searchParts.push(_targetUrlForRewrite.search.slice(1));
   }
-  if (__PROXY_EMBEDDED__) {
+  if (__PR0✘Y_EMBEDDED__) {
     _searchParts.push('embedded=1');
   }
-  _searchParts.push('url=' + _encodeURIComponent(__PROXY_TARGET__));
+  _searchParts.push('url=' + _encodeURIComponent(__PR0✘Y_TARGET__));
   var _newRewriteUrl = _targetUrlForRewrite.pathname + '?' + _searchParts.join('&') + (_targetUrlForRewrite.hash || '');
   if (_realLocationPathname === '/' || _realLocationSearch.indexOf('url=') !== -1) {
     _replaceState(_history.state, '', _newRewriteUrl);
@@ -3917,7 +3917,7 @@ try {
 
 } catch(globalError) {
   // If anything fails catastrophically, log but don't break the page
-  try { console.error('[Proxy] Init error:', globalError); } catch(e) {}
+  try { console.error('[PR0✘Y] Init error:', globalError); } catch(e) {}
     }
   
   })();
@@ -3940,17 +3940,17 @@ class InjectToolbar {
 <style>
 html{margin-top:44px!important}
 body{margin-top:0!important}
-#__proxy_toolbar__{position:fixed!important;top:0!important;left:0!important;right:0!important;width:100%!important;height:44px!important;background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%)!important;border-bottom:2px solid #0f3460!important;display:flex!important;align-items:center!important;padding:0 12px!important;gap:8px!important;z-index:2147483647!important;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif!important;box-shadow:0 2px 10px rgba(0,0,0,0.3)!important;box-sizing:border-box!important}
-#__proxy_url_input__{flex:1!important;height:28px!important;background:rgba(255,255,255,0.1)!important;border:1px solid #0f3460!important;border-radius:6px!important;padding:0 12px!important;color:#eee!important;font-size:13px!important;outline:none!important;font-family:inherit!important}
-#__proxy_url_input__:focus{border-color:#e94560!important}
-#__proxy_url_input__::placeholder{color:#888!important}
+#__PR0✘Y_toolbar__{position:fixed!important;top:0!important;left:0!important;right:0!important;width:100%!important;height:44px!important;background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%)!important;border-bottom:2px solid #0f3460!important;display:flex!important;align-items:center!important;padding:0 12px!important;gap:8px!important;z-index:2147483647!important;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif!important;box-shadow:0 2px 10px rgba(0,0,0,0.3)!important;box-sizing:border-box!important}
+#__PR0✘Y_url_input__{flex:1!important;height:28px!important;background:rgba(255,255,255,0.1)!important;border:1px solid #0f3460!important;border-radius:6px!important;padding:0 12px!important;color:#eee!important;font-size:13px!important;outline:none!important;font-family:inherit!important}
+#__PR0✘Y_url_input__:focus{border-color:#e94560!important}
+#__PR0✘Y_url_input__::placeholder{color:#888!important}
 </style>
-<div id="__proxy_toolbar__">
-  <a href="https://jimmyqrg.github.io/proxy/" target="_blank" style="display:flex;align-items:center;gap:8px;color:#e94560;font-weight:600;font-size:14px;flex-shrink:0;text-decoration:none;cursor:pointer;" onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">
+<div id="__PR0✘Y_toolbar__">
+  <a href="https://jimmyqrg.github.io/PR0✘Y/" target="_blank" style="display:flex;align-items:center;gap:8px;color:#e94560;font-weight:600;font-size:14px;flex-shrink:0;text-decoration:none;cursor:pointer;" onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/><path d="M2 12h20"/></svg>
-    PROXY
+    PR0✘Y
   </a>
-  <input type="text" id="__proxy_url_input__" value="${escaped}" placeholder="Enter URL and press Enter" onkeydown="if(event.key==='Enter'){var u=this.value.trim();if(u.indexOf('http')!==0)u='https://'+u;location.href='/?url='+encodeURIComponent(u);}">
+  <input type="text" id="__PR0✘Y_url_input__" value="${escaped}" placeholder="Enter URL and press Enter" onkeydown="if(event.key==='Enter'){var u=this.value.trim();if(u.indexOf('http')!==0)u='https://'+u;location.href='/?url='+encodeURIComponent(u);}">
 </div>
 `, { html: true });
   }
@@ -3993,7 +3993,7 @@ function rewriteJsonUrls(json, base, isEmbedded) {
           const isUrlKey = urlKeys.some(k => key.toLowerCase().includes(k));
           
           if (isUrlKey && value && (value.startsWith('http://') || value.startsWith('https://') || value.startsWith('/') || value.startsWith('./'))) {
-            if (!value.includes('proxy.ikunbeautiful.workers.dev')) {
+            if (!value.includes('PR0✘Y.ikunbeautiful.workers.dev')) {
               try {
                 const abs = new URL(value, base).toString();
                 result[key] = prefix + encodeURIComponent(abs);
@@ -4034,7 +4034,7 @@ function rewriteSvgUrls(svg, base, isEmbedded) {
     svg = svg.replace(/\shref\s*=\s*(['"])([^'"]+)\1/gi, (m, q, url) => {
       try {
         if (!url || url.startsWith('#') || url.startsWith('data:') || url.startsWith('javascript:')) return m;
-        if (url.includes('proxy.ikunbeautiful.workers.dev')) return m;
+        if (url.includes('PR0✘Y.ikunbeautiful.workers.dev')) return m;
         const abs = new URL(url, base).toString();
         return ` href=${q}${prefix}${encodeURIComponent(abs)}${q}`;
       } catch {
@@ -4046,7 +4046,7 @@ function rewriteSvgUrls(svg, base, isEmbedded) {
     svg = svg.replace(/\sxlink:href\s*=\s*(['"])([^'"]+)\1/gi, (m, q, url) => {
       try {
         if (!url || url.startsWith('#') || url.startsWith('data:') || url.startsWith('javascript:')) return m;
-        if (url.includes('proxy.ikunbeautiful.workers.dev')) return m;
+        if (url.includes('PR0✘Y.ikunbeautiful.workers.dev')) return m;
         const abs = new URL(url, base).toString();
         return ` xlink:href=${q}${prefix}${encodeURIComponent(abs)}${q}`;
       } catch {
@@ -4186,7 +4186,7 @@ async function inlineExternalResources(html, baseUrl, isEmbedded) {
         const fullTag = match[0];
         // Skip data: and blob: URLs, and already proxied URLs
         if (!url.startsWith('data:') && !url.startsWith('blob:') && 
-            !url.includes('proxy.ikunbeautiful.workers.dev')) {
+            !url.includes('PR0✘Y.ikunbeautiful.workers.dev')) {
           try {
             const absUrl = new URL(url, baseUrl).toString();
             // Don't inline if already in map (avoid duplicates)
@@ -4206,7 +4206,7 @@ async function inlineExternalResources(html, baseUrl, isEmbedded) {
         const fullTag = match[0];
         // Skip data: and blob: URLs, and already proxied URLs
         if (!url.startsWith('data:') && !url.startsWith('blob:') && 
-            !url.includes('proxy.ikunbeautiful.workers.dev')) {
+            !url.includes('PR0✘Y.ikunbeautiful.workers.dev')) {
           try {
             const absUrl = new URL(url, baseUrl).toString();
             // Don't inline if already in map (avoid duplicates)
@@ -4283,7 +4283,7 @@ async function inlineExternalResources(html, baseUrl, isEmbedded) {
   }
   
 // --------------------
-// WebSocket Proxy Handler - NON-BLOCKING
+// WebSocket PR0✘Y Handler - NON-BLOCKING
 // Returns 101 immediately so the browser's WebSocket handshake completes
 // instantly. The target connection is established in the background.
 // Messages from the client are queued until the target is connected.
@@ -4428,15 +4428,15 @@ function handleWebSocket(request, targetWsUrl) {
       });
     }
 
-    // ========== WebSocket Proxy ==========
+    // ========== WebSocket PR0✘Y ==========
     if (wsTarget) {
-      // Unwrap nested proxy WebSocket URLs.
+      // Unwrap nested PR0✘Y WebSocket URLs.
       // A double-proxied URL looks like:
-      //   ?ws=wss://proxy.ikunbeautiful.workers.dev/?ws=wss%3A%2F%2Freal-target...
+      //   ?ws=wss://PR0✘Y.ikunbeautiful.workers.dev/?ws=wss%3A%2F%2Freal-target...
       // We recursively extract the innermost ?ws= target.
       let finalWsTarget = wsTarget;
       for (let i = 0; i < 5; i++) { // max 5 unwrap iterations
-        if (finalWsTarget.includes('proxy.ikunbeautiful.workers.dev')) {
+        if (finalWsTarget.includes('PR0✘Y.ikunbeautiful.workers.dev')) {
           try {
             // Normalise ws(s) to http(s) so URL parsing works
             let parseUrl = finalWsTarget;
@@ -4450,7 +4450,7 @@ function handleWebSocket(request, targetWsUrl) {
           } catch {}
           break; // Couldn't unwrap further
         }
-        break; // Not a proxy URL, done
+        break; // Not a PR0✘Y URL, done
       }
 
       // Validate WebSocket target
@@ -4458,8 +4458,8 @@ function handleWebSocket(request, targetWsUrl) {
           !finalWsTarget.startsWith('http://') && !finalWsTarget.startsWith('https://')) {
         return new Response('Invalid WebSocket URL', { status: 400 });
       }
-      if (finalWsTarget.includes('proxy.ikunbeautiful.workers.dev')) {
-        return new Response('Cannot proxy WebSocket to self', { status: 400 });
+      if (finalWsTarget.includes('PR0✘Y.ikunbeautiful.workers.dev')) {
+        return new Response('Cannot PR0✘Y WebSocket to self', { status: 400 });
       }
       // Handle WebSocket upgrade (case-insensitive check)
       const upgradeHeader = (request.headers.get('Upgrade') || '').toLowerCase();
@@ -4500,7 +4500,7 @@ function handleWebSocket(request, targetWsUrl) {
       // has ?url= parameter, so the cookie is the most reliable source.
       if (!targetBase) {
         const cookies = request.headers.get('Cookie') || '';
-        const match = cookies.match(/__proxy_target=([^;]+)/);
+        const match = cookies.match(/__PR0✘Y_target=([^;]+)/);
         if (match) {
           try { targetBase = decodeURIComponent(match[1]); } catch {}
         }
@@ -4544,7 +4544,7 @@ function handleWebSocket(request, targetWsUrl) {
           return Response.redirect(url.origin + prefix + encodeURIComponent(fullTarget), 302);
         }
 
-        // For sub-resources (images, scripts, CSS, etc.), proxy directly
+        // For sub-resources (images, scripts, CSS, etc.), PR0✘Y directly
         // to avoid redirect overhead
         target = fullTarget;
         isEmbedded = refEmbedded;
@@ -4560,8 +4560,8 @@ function handleWebSocket(request, targetWsUrl) {
     }
 
     // Prevent infinite loops
-    if (target.includes("proxy.ikunbeautiful.workers.dev")) {
-      return new Response("Cannot proxy the proxy itself", { status: 400 });
+    if (target.includes("PR0✘Y.ikunbeautiful.workers.dev")) {
+      return new Response("Cannot PR0✘Y the PR0✘Y itself", { status: 400 });
     }
   
       try {
@@ -4632,8 +4632,8 @@ function handleWebSocket(request, targetWsUrl) {
         // Update currentTarget for next iteration
         currentTarget = resolvedLocation;
         
-        // If redirecting to the same proxy, prevent infinite loop
-        if (resolvedLocation.includes("proxy.ikunbeautiful.workers.dev")) {
+        // If redirecting to the same PR0✘Y, prevent infinite loop
+        if (resolvedLocation.includes("PR0✘Y.ikunbeautiful.workers.dev")) {
           break;
         }
         
@@ -4721,7 +4721,7 @@ function handleWebSocket(request, targetWsUrl) {
         try {
           const targetOrigin = new URL(target).origin;
           sanitizedHeaders.set('Set-Cookie', 
-            '__proxy_target=' + encodeURIComponent(targetOrigin) + 
+            '__PR0✘Y_target=' + encodeURIComponent(targetOrigin) + 
             '; Path=/; SameSite=None; Secure; Max-Age=86400');
         } catch {}
         // Read HTML as text first to inline external resources
@@ -4730,7 +4730,7 @@ function handleWebSocket(request, targetWsUrl) {
         // DISABLED: Inlining external CSS/JS was causing double-proxification of URLs,
         // JS corruption, 503 timeouts, and font corruption. LinkRewriter/ScriptRewriter
         // already rewrite <link href> and <script src> attributes, and CSS url()
-        // references are handled by rewriteCSSUrls when CSS is fetched through the proxy.
+        // references are handled by rewriteCSSUrls when CSS is fetched through the PR0✘Y.
         // try { htmlText = await inlineExternalResources(htmlText, target, isEmbedded); } catch(e) {}
         
         // Now apply HTMLRewriter to the inlined HTML
@@ -4907,7 +4907,7 @@ function handleWebSocket(request, targetWsUrl) {
   
       } catch (e) {
       const errorMessage = e.name === 'AbortError' ? 'Request timeout (30s)' : e.message;
-      return new Response(`Proxy error: ${errorMessage}`, { 
+      return new Response(`PR0✘Y error: ${errorMessage}`, { 
         status: 502,
         headers: { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' }
       });
