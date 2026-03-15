@@ -1,4 +1,4 @@
-const PR0✘Y = "https://proxy.ikunbeautiful.workers.dev/?embedded=1&url=";
+const Prxy = "https://proxy.ikunbeautiful.workers.dev/?embedded=1&url=";
 const tabs = [];
 let history = JSON.parse(localStorage.getItem("browserHistory") || "[]");
 let bookmarks = JSON.parse(localStorage.getItem("browserBookmarks") || "[]");
@@ -289,7 +289,7 @@ function newTab(url = NEWTAB_URL) {
     
     // For hw://newtab, load the actual default page but display the special URL
     const loadUrl = (url === NEWTAB_URL) ? NEWTAB_PAGE : url;
-    iframe.src = PR0✘Y + encodeURIComponent(loadUrl);
+    iframe.src = Prxy + encodeURIComponent(loadUrl);
     iframe.style.display = "none";
     iframe.dataset.id = id;
     iframe.sandbox = "allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-popups-to-escape-sandbox";
@@ -392,13 +392,13 @@ function newTab(url = NEWTAB_URL) {
                     }, '*');
                 }
                 
-                // PR0✘Y iframe src attributes
-                function PR0✘YIframeSrc() {
+                // Prxy iframe src attributes
+                function PrxyIframeSrc() {
                     const iframes = document.querySelectorAll('iframe');
                     
                     iframes.forEach(iframe => {
                         const originalSrc = iframe.getAttribute('src');
-                        if (originalSrc && !originalSrc.includes('${PR0✘Y}')) {
+                        if (originalSrc && !originalSrc.includes('${Prxy}')) {
                             try {
                                 let fullUrl;
                                 if (originalSrc.startsWith('http://') || originalSrc.startsWith('https://')) {
@@ -411,9 +411,9 @@ function newTab(url = NEWTAB_URL) {
                                     fullUrl = new URL(originalSrc, window.location.href).href;
                                 }
                                 
-                                // Only PR0✘Y if it's a different origin
+                                // Only Prxy if it's a different origin
                                 if (!fullUrl.startsWith(window.location.origin)) {
-                                    const proxiedUrl = '${PR0✘Y}' + encodeURIComponent(fullUrl);
+                                    const proxiedUrl = '${Prxy}' + encodeURIComponent(fullUrl);
                                     iframe.setAttribute('src', proxiedUrl);
                                     iframe.setAttribute('data-original-src', originalSrc);
                                 }
@@ -424,8 +424,8 @@ function newTab(url = NEWTAB_URL) {
                     });
                 }
                 
-                // PR0✘Y iframes on page load
-                PR0✘YIframeSrc();
+                // Prxy iframes on page load
+                PrxyIframeSrc();
                 
                 // Watch for dynamically added iframes
                 const iframeObserver = new MutationObserver(function(mutations) {
@@ -433,7 +433,7 @@ function newTab(url = NEWTAB_URL) {
                         if (mutation.type === 'childList') {
                             mutation.addedNodes.forEach(function(node) {
                                 if (node.tagName && node.tagName.toLowerCase() === 'iframe') {
-                                    setTimeout(PR0✘YIframeSrc, 100);
+                                    setTimeout(PrxyIframeSrc, 100);
                                 }
                             });
                         }
@@ -461,11 +461,11 @@ function newTab(url = NEWTAB_URL) {
                         tab.title = title;
                     }
                     // If contentDocument.title is empty, don't overwrite — the 
-                    // PR0✘Y_URL_CHANGED message from the worker may have already
+                    // Prxy_URL_CHANGED message from the worker may have already
                     // set a proper title from the page's <title> tag.
                 } catch (e) {
                     // Cross-origin — can't read contentDocument.title.
-                    // Don't overwrite; rely on PR0✘Y_URL_CHANGED / UPDATE_TITLE messages.
+                    // Don't overwrite; rely on Prxy_URL_CHANGED / UPDATE_TITLE messages.
                 }
                 
                 // Fallback: if title is still "Loading..." after a delay,
@@ -540,9 +540,9 @@ function switchTab(id) {
         // NOTE: Do NOT read iframe.contentWindow.location.href here.
         // The worker's injected script uses history.replaceState to change
         // the iframe URL to the target's path (e.g., /en/g/tag) for Next.js
-        // compatibility. Reading the raw iframe URL would show the PR0✘Y's
+        // compatibility. Reading the raw iframe URL would show the Prxy's
         // internal path instead of the actual target URL.
-        // The correct target URL is maintained via PR0✘Y_URL_CHANGED messages.
+        // The correct target URL is maintained via Prxy_URL_CHANGED messages.
     }
 }
 
@@ -577,7 +577,7 @@ window.addEventListener('message', function(event) {
     
     switch(event.data.type) {
         case 'NEW_TAB':
-        case 'PR0✘Y_NEW_TAB':
+        case 'Prxy_NEW_TAB':
             if (event.data.url) {
                 newTab(event.data.url);
             }
@@ -591,7 +591,7 @@ window.addEventListener('message', function(event) {
             break;
             
         case 'CLOSE_CURRENT_TAB':
-        case 'PR0✘Y_CLOSE_TAB':
+        case 'Prxy_CLOSE_TAB':
             if (tabs.length > 1 && activeTab) {
                 closeTab(activeTab.id);
             }
@@ -624,8 +624,8 @@ window.addEventListener('message', function(event) {
             }
             break;
             
-        case 'PR0✘Y_URL_CHANGED':
-            // Update the tab's actual URL when it changes inside the PR0✘Y
+        case 'Prxy_URL_CHANGED':
+            // Update the tab's actual URL when it changes inside the Prxy
             if (event.data.url && event.source) {
                 const tab = tabs.find(t => t.iframe && t.iframe.contentWindow === event.source);
                 if (tab) {
@@ -659,7 +659,7 @@ window.addEventListener('message', function(event) {
 
 // ---------- History & Bookmarks ----------
 function saveHistory(url) {
-    if (!url || url === NEWTAB_URL || url.includes(PR0✘Y) || history[history.length - 1] === url) return;
+    if (!url || url === NEWTAB_URL || url.includes(Prxy) || history[history.length - 1] === url) return;
     
     history.push(url);
     if (history.length > 100) {
@@ -825,7 +825,7 @@ function navigate(url) {
         } else {
             activeTab.url = NEWTAB_URL;
             activeTab.title = "New Tab";
-            activeTab.iframe.src = PR0✘Y + encodeURIComponent(NEWTAB_PAGE);
+            activeTab.iframe.src = Prxy + encodeURIComponent(NEWTAB_PAGE);
             document.getElementById("url").value = NEWTAB_URL;
             updateBrowserTitle();
             renderTabs();
@@ -848,7 +848,7 @@ function navigate(url) {
     } else {
         activeTab.url = url;
         activeTab.title = "Loading...";
-        activeTab.iframe.src = PR0✘Y + encodeURIComponent(url);
+        activeTab.iframe.src = Prxy + encodeURIComponent(url);
         document.getElementById("url").value = url;
         saveHistory(url);
         updateBrowserTitle();
@@ -868,7 +868,7 @@ document.getElementById("back").onclick = () => {
     if (activeTab?.iframe?.contentWindow) {
         try {
             activeTab.iframe.contentWindow.history.back();
-            // URL will be updated via PR0✘Y_URL_CHANGED message from the worker's
+            // URL will be updated via Prxy_URL_CHANGED message from the worker's
             // injected script (history.back override calls notifyParent)
         } catch (e) {
             console.log("Cannot go back due to cross-origin restrictions");
@@ -880,7 +880,7 @@ document.getElementById("forward").onclick = () => {
     if (activeTab?.iframe?.contentWindow) {
         try {
             activeTab.iframe.contentWindow.history.forward();
-            // URL will be updated via PR0✘Y_URL_CHANGED message from the worker's
+            // URL will be updated via Prxy_URL_CHANGED message from the worker's
             // injected script (history.forward override calls notifyParent)
         } catch (e) {
             console.log("Cannot go forward due to cross-origin restrictions");
@@ -911,9 +911,9 @@ document.getElementById("home").onclick = () => {
 
 document.getElementById("open").onclick = () => {
     if (activeTab && activeTab.url) {
-        // Open the current URL directly in the PR0✘Y in a new browser tab
-        const PR0✘YUrl = PR0✘Y + encodeURIComponent(activeTab.url);
-        window.open(PR0✘YUrl, '_blank');
+        // Open the current URL directly in the Prxy in a new browser tab
+        const PrxyUrl = Prxy + encodeURIComponent(activeTab.url);
+        window.open(PrxyUrl, '_blank');
     }
 };
 
