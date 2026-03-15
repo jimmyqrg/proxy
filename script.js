@@ -1,4 +1,4 @@
-const PR0✘Y = "https://PR0✘Y.ikunbeautiful.workers.dev/?embedded=1&url=";
+const PR0✘Y = "https://proxy.ikunbeautiful.workers.dev/?embedded=1&url=";
 const tabs = [];
 let history = JSON.parse(localStorage.getItem("browserHistory") || "[]");
 let bookmarks = JSON.parse(localStorage.getItem("browserBookmarks") || "[]");

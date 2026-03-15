@@ -39,16 +39,16 @@ function isSpecialUrl(url) {
 function isAlreadyProxied(url) {
   if (!url) return false;
   return url.includes('/?url=') || url.includes('/?embedded=') || 
-         url.includes('PR0✘Y.ikunbeautiful.workers.dev') ||
+         url.includes('proxy.ikunbeautiful.workers.dev') ||
          url.includes('%2F%3Furl%3D') || url.includes('%2F%3Fembedded%3D') ||
-         url.includes('PR0✘Y.ikunbeautiful.workers.dev');
+         url.includes('proxy.ikunbeautiful.workers.dev');
 }
 
 // Domains that must NOT be proxied (AWS WAF challenge, etc.) - load/fetch direct
 function isBypassDomainUrl(url) {
   if (!url || typeof url !== 'string') return false;
   try {
-    const u = new URL(url.trim(), 'https://PR0✘Y.ikunbeautiful.workers.dev');
+    const u = new URL(url.trim(), 'https://proxy.ikunbeautiful.workers.dev');
     const host = (u.hostname || '').toLowerCase();
     return host === 'awswaf.com' || host.endsWith('.awswaf.com');
   } catch { return false; }
@@ -92,7 +92,7 @@ function rewriteUrl(original, base, isEmbedded = false) {
     }
 
     // Don't PR0✘Y our own worker or already-proxied URLs
-    if (abs.includes("PR0✘Y.ikunbeautiful.workers.dev")) return original;
+    if (abs.includes("proxy.ikunbeautiful.workers.dev")) return original;
     if (isAlreadyProxied(abs)) return original;
     if (isBypassDomainUrl(abs)) return original;
   
@@ -277,7 +277,7 @@ class ScriptRewriter extends SafeRewriter {
       // fetch("https://...") or fetch('https://...')
       rewritten = rewritten.replace(/(fetch|XMLHttpRequest\.prototype\.open)\s*\(\s*(['"])([^'"]+)\2/gi, (m, fn, q, url) => {
         try {
-          if (!url || url.includes('PR0✘Y.ikunbeautiful.workers.dev') || url.startsWith('data:') || url.startsWith('blob:')) return m;
+          if (!url || url.includes('proxy.ikunbeautiful.workers.dev') || url.startsWith('data:') || url.startsWith('blob:')) return m;
           if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('/') || url.startsWith('./')) {
             const abs = new URL(url, base).toString();
             if (isBypassDomainUrl(abs)) return m;
@@ -420,7 +420,7 @@ function rewriteCSSUrls(css, base, isEmbedded) {
       try {
         path = path.trim();
         if (!path || path.startsWith('data:') || path.startsWith('blob:') || path.startsWith('#') || path.startsWith('about:')) return m;
-        if (path.includes('PR0✘Y.ikunbeautiful.workers.dev')) return m;
+        if (path.includes('proxy.ikunbeautiful.workers.dev')) return m;
         if (path.includes('/?url=') || path.includes('/?embedded=')) return m;
         const abs = new URL(path, base).toString();
         if (abs.includes('/?url=') || abs.includes('/?embedded=')) return m;
@@ -435,7 +435,7 @@ function rewriteCSSUrls(css, base, isEmbedded) {
       try {
         path = path.trim();
         if (!path || path.startsWith('data:')) return m;
-        if (path.includes('PR0✘Y.ikunbeautiful.workers.dev')) return m;
+        if (path.includes('proxy.ikunbeautiful.workers.dev')) return m;
         if (path.includes('/?url=') || path.includes('/?embedded=')) return m;
         const abs = new URL(path, base).toString();
         if (abs.includes('/?url=') || abs.includes('/?embedded=')) return m;
@@ -450,7 +450,7 @@ function rewriteCSSUrls(css, base, isEmbedded) {
       try {
         path = path.trim();
         if (!path || path.startsWith('data:')) return m;
-        if (path.includes('PR0✘Y.ikunbeautiful.workers.dev')) return m;
+        if (path.includes('proxy.ikunbeautiful.workers.dev')) return m;
         if (path.includes('/?url=') || path.includes('/?embedded=')) return m;
         const abs = new URL(path, base).toString();
         if (abs.includes('/?url=') || abs.includes('/?embedded=')) return m;
@@ -467,7 +467,7 @@ function rewriteCSSUrls(css, base, isEmbedded) {
           try {
             upath = upath.trim();
             if (!upath || upath.startsWith('data:') || upath.startsWith('blob:')) return um;
-            if (upath.includes('PR0✘Y.ikunbeautiful.workers.dev')) return um;
+            if (upath.includes('proxy.ikunbeautiful.workers.dev')) return um;
             if (upath.includes('/?url=') || upath.includes('/?embedded=')) return um;
             const abs = new URL(upath, base).toString();
             if (abs.includes('/?url=') || abs.includes('/?embedded=')) return um;
@@ -487,7 +487,7 @@ function rewriteCSSUrls(css, base, isEmbedded) {
       try {
         path = path.trim();
         if (!path || path.startsWith('data:') || path.startsWith('blob:') || path.startsWith('#')) return m;
-        if (path.includes('PR0✘Y.ikunbeautiful.workers.dev')) return m;
+        if (path.includes('proxy.ikunbeautiful.workers.dev')) return m;
         if (path.includes('/?url=') || path.includes('/?embedded=')) return m;
         const abs = new URL(path, base).toString();
         if (abs.includes('/?url=') || abs.includes('/?embedded=')) return m;
@@ -504,7 +504,7 @@ function rewriteCSSUrls(css, base, isEmbedded) {
           try {
             upath = upath.trim();
             if (!upath || upath.startsWith('data:') || upath.startsWith('blob:')) return um;
-            if (upath.includes('PR0✘Y.ikunbeautiful.workers.dev')) return um;
+            if (upath.includes('proxy.ikunbeautiful.workers.dev')) return um;
             if (upath.includes('/?url=') || upath.includes('/?embedded=')) return um;
             const abs = new URL(upath, base).toString();
             if (abs.includes('/?url=') || abs.includes('/?embedded=')) return um;
@@ -782,11 +782,11 @@ function isSpecial(url) {
 function isProxied(url) {
   if (!url) return false;
   var s = safeStr(url);
-  if (s.indexOf('PR0✘Y.ikunbeautiful.workers.dev') !== -1) return true;
+  if (s.indexOf('proxy.ikunbeautiful.workers.dev') !== -1) return true;
   if (s.indexOf('/?url=') !== -1 || s.indexOf('/?embedded=') !== -1) return true;
   // Also detect path-based format: /path?[...]url=encoded_target
   try {
-    var testUrl = new _URL(s, 'https://PR0✘Y.ikunbeautiful.workers.dev');
+    var testUrl = new _URL(s, 'https://proxy.ikunbeautiful.workers.dev');
     var urlParam = testUrl.searchParams.get('url');
     if (urlParam && (urlParam.indexOf('http://') === 0 || urlParam.indexOf('https://') === 0)) {
       return true;
@@ -799,7 +799,7 @@ function isProxied(url) {
 // (e.g. AWS WAF challenge token.awswaf.com - PR0✘Ying breaks the challenge flow)
 function isBypassDomain(url) {
   try {
-    var u = new _URL(url, 'https://PR0✘Y.ikunbeautiful.workers.dev');
+    var u = new _URL(url, 'https://proxy.ikunbeautiful.workers.dev');
     var host = (u.hostname || '').toLowerCase();
     return host === 'awswaf.com' || host.endsWith('.awswaf.com');
   } catch(e) { return false; }
@@ -1703,7 +1703,7 @@ try {
   _window.URL = function(url, base) {
     // If base is location-like, use the target URL
     if (base === _location || base === _locationPR0✘Y || base === _document.URL || base === _document.baseURI ||
-        (typeof base === 'string' && base.indexOf('PR0✘Y.ikunbeautiful.workers.dev') !== -1)) {
+        (typeof base === 'string' && base.indexOf('proxy.ikunbeautiful.workers.dev') !== -1)) {
       base = getCurrentTarget();
     }
     // If base is a URL object that's proxied, extract the real URL
@@ -1857,7 +1857,7 @@ try {
     // double/triple-proxied URL like wss://PR0✘Y.../ws=wss%3A%2F%2FPR0✘Y.../ws=...
     function unwrapWsTarget(wsUrl) {
       for (var i = 0; i < 5; i++) {
-        if (wsUrl.indexOf('PR0✘Y.ikunbeautiful.workers.dev') === -1 && wsUrl.indexOf('/?ws=') === -1) break;
+        if (wsUrl.indexOf('proxy.ikunbeautiful.workers.dev') === -1 && wsUrl.indexOf('/?ws=') === -1) break;
         try {
           var parse = wsUrl;
           if (parse.indexOf('ws://') === 0) parse = 'http://' + parse.slice(5);
@@ -1876,11 +1876,11 @@ try {
         
         // If the URL is already proxied (contains PR0✘Y domain or /?ws=),
         // extract the real target to prevent double-PR0✘Ying.
-        if (resolvedWsUrl && (resolvedWsUrl.indexOf('/?ws=') !== -1 || resolvedWsUrl.indexOf('PR0✘Y.ikunbeautiful.workers.dev') !== -1)) {
+        if (resolvedWsUrl && (resolvedWsUrl.indexOf('/?ws=') !== -1 || resolvedWsUrl.indexOf('proxy.ikunbeautiful.workers.dev') !== -1)) {
           resolvedWsUrl = unwrapWsTarget(resolvedWsUrl);
           // If unwrapping yielded a non-PR0✘Y URL, fall through to PR0✘Y it properly below.
           // If it's still a PR0✘Y URL (couldn't unwrap), pass through directly.
-          if (resolvedWsUrl.indexOf('PR0✘Y.ikunbeautiful.workers.dev') !== -1) {
+          if (resolvedWsUrl.indexOf('proxy.ikunbeautiful.workers.dev') !== -1) {
             if (protocols !== undefined) return new _WebSocket(resolvedWsUrl, protocols);
             return new _WebSocket(resolvedWsUrl);
           }
@@ -1908,13 +1908,13 @@ try {
             resolvedWsUrl = 'wss://' + resolvedWsUrl.slice(8);
           }
           // Don't PR0✘Y WebSocket URLs that already point to our PR0✘Y
-          if (resolvedWsUrl.indexOf('PR0✘Y.ikunbeautiful.workers.dev') !== -1) {
+          if (resolvedWsUrl.indexOf('proxy.ikunbeautiful.workers.dev') !== -1) {
             if (protocols !== undefined) return new _WebSocket(resolvedWsUrl, protocols);
             return new _WebSocket(resolvedWsUrl);
           }
           // Route through PR0✘Y WebSocket endpoint
           var PR0✘YWsProtocol = _realLocationHref.indexOf('https://') === 0 ? 'wss://' : 'ws://';
-          var PR0✘YHost = _realLocationHref.split('/')[2]; // e.g. PR0✘Y.ikunbeautiful.workers.dev
+          var PR0✘YHost = _realLocationHref.split('/')[2]; // e.g. proxy.ikunbeautiful.workers.dev
           var PR0✘YWsUrl = PR0✘YWsProtocol + PR0✘YHost + '/?ws=' + _encodeURIComponent(resolvedWsUrl);
           if (protocols !== undefined) {
             return new _WebSocket(PR0✘YWsUrl, protocols);
@@ -3993,7 +3993,7 @@ function rewriteJsonUrls(json, base, isEmbedded) {
           const isUrlKey = urlKeys.some(k => key.toLowerCase().includes(k));
           
           if (isUrlKey && value && (value.startsWith('http://') || value.startsWith('https://') || value.startsWith('/') || value.startsWith('./'))) {
-            if (!value.includes('PR0✘Y.ikunbeautiful.workers.dev')) {
+            if (!value.includes('proxy.ikunbeautiful.workers.dev')) {
               try {
                 const abs = new URL(value, base).toString();
                 result[key] = prefix + encodeURIComponent(abs);
@@ -4034,7 +4034,7 @@ function rewriteSvgUrls(svg, base, isEmbedded) {
     svg = svg.replace(/\shref\s*=\s*(['"])([^'"]+)\1/gi, (m, q, url) => {
       try {
         if (!url || url.startsWith('#') || url.startsWith('data:') || url.startsWith('javascript:')) return m;
-        if (url.includes('PR0✘Y.ikunbeautiful.workers.dev')) return m;
+        if (url.includes('proxy.ikunbeautiful.workers.dev')) return m;
         const abs = new URL(url, base).toString();
         return ` href=${q}${prefix}${encodeURIComponent(abs)}${q}`;
       } catch {
@@ -4046,7 +4046,7 @@ function rewriteSvgUrls(svg, base, isEmbedded) {
     svg = svg.replace(/\sxlink:href\s*=\s*(['"])([^'"]+)\1/gi, (m, q, url) => {
       try {
         if (!url || url.startsWith('#') || url.startsWith('data:') || url.startsWith('javascript:')) return m;
-        if (url.includes('PR0✘Y.ikunbeautiful.workers.dev')) return m;
+        if (url.includes('proxy.ikunbeautiful.workers.dev')) return m;
         const abs = new URL(url, base).toString();
         return ` xlink:href=${q}${prefix}${encodeURIComponent(abs)}${q}`;
       } catch {
@@ -4186,7 +4186,7 @@ async function inlineExternalResources(html, baseUrl, isEmbedded) {
         const fullTag = match[0];
         // Skip data: and blob: URLs, and already proxied URLs
         if (!url.startsWith('data:') && !url.startsWith('blob:') && 
-            !url.includes('PR0✘Y.ikunbeautiful.workers.dev')) {
+            !url.includes('proxy.ikunbeautiful.workers.dev')) {
           try {
             const absUrl = new URL(url, baseUrl).toString();
             // Don't inline if already in map (avoid duplicates)
@@ -4206,7 +4206,7 @@ async function inlineExternalResources(html, baseUrl, isEmbedded) {
         const fullTag = match[0];
         // Skip data: and blob: URLs, and already proxied URLs
         if (!url.startsWith('data:') && !url.startsWith('blob:') && 
-            !url.includes('PR0✘Y.ikunbeautiful.workers.dev')) {
+            !url.includes('proxy.ikunbeautiful.workers.dev')) {
           try {
             const absUrl = new URL(url, baseUrl).toString();
             // Don't inline if already in map (avoid duplicates)
@@ -4432,11 +4432,11 @@ function handleWebSocket(request, targetWsUrl) {
     if (wsTarget) {
       // Unwrap nested PR0✘Y WebSocket URLs.
       // A double-proxied URL looks like:
-      //   ?ws=wss://PR0✘Y.ikunbeautiful.workers.dev/?ws=wss%3A%2F%2Freal-target...
+      //   ?ws=wss://proxy.ikunbeautiful.workers.dev/?ws=wss%3A%2F%2Freal-target...
       // We recursively extract the innermost ?ws= target.
       let finalWsTarget = wsTarget;
       for (let i = 0; i < 5; i++) { // max 5 unwrap iterations
-        if (finalWsTarget.includes('PR0✘Y.ikunbeautiful.workers.dev')) {
+        if (finalWsTarget.includes('proxy.ikunbeautiful.workers.dev')) {
           try {
             // Normalise ws(s) to http(s) so URL parsing works
             let parseUrl = finalWsTarget;
@@ -4458,7 +4458,7 @@ function handleWebSocket(request, targetWsUrl) {
           !finalWsTarget.startsWith('http://') && !finalWsTarget.startsWith('https://')) {
         return new Response('Invalid WebSocket URL', { status: 400 });
       }
-      if (finalWsTarget.includes('PR0✘Y.ikunbeautiful.workers.dev')) {
+      if (finalWsTarget.includes('proxy.ikunbeautiful.workers.dev')) {
         return new Response('Cannot PR0✘Y WebSocket to self', { status: 400 });
       }
       // Handle WebSocket upgrade (case-insensitive check)
@@ -4560,7 +4560,7 @@ function handleWebSocket(request, targetWsUrl) {
     }
 
     // Prevent infinite loops
-    if (target.includes("PR0✘Y.ikunbeautiful.workers.dev")) {
+    if (target.includes("proxy.ikunbeautiful.workers.dev")) {
       return new Response("Cannot PR0✘Y the PR0✘Y itself", { status: 400 });
     }
   
@@ -4633,7 +4633,7 @@ function handleWebSocket(request, targetWsUrl) {
         currentTarget = resolvedLocation;
         
         // If redirecting to the same PR0✘Y, prevent infinite loop
-        if (resolvedLocation.includes("PR0✘Y.ikunbeautiful.workers.dev")) {
+        if (resolvedLocation.includes("proxy.ikunbeautiful.workers.dev")) {
           break;
         }
         
