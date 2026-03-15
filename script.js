@@ -6,7 +6,7 @@ let activeTab = null;
 
 // Special internal URLs
 const NEWTAB_URL = "hw://newtab";
-const NEWTAB_PAGE = "https://jimmyqrg.github.io/PR0✘Y/default/";
+const NEWTAB_PAGE = "https://jimmyqrg.github.io/proxy/default/";
 
 // Track if we're initializing dark mode from device
 let isInitialDarkModeLoad = true;

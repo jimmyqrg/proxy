@@ -3946,7 +3946,7 @@ body{margin-top:0!important}
 #__PR0✘Y_url_input__::placeholder{color:#888!important}
 </style>
 <div id="__PR0✘Y_toolbar__">
-  <a href="https://jimmyqrg.github.io/PR0✘Y/" target="_blank" style="display:flex;align-items:center;gap:8px;color:#e94560;font-weight:600;font-size:14px;flex-shrink:0;text-decoration:none;cursor:pointer;" onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">
+  <a href="https://jimmyqrg.github.io/proxy/" target="_blank" style="display:flex;align-items:center;gap:8px;color:#e94560;font-weight:600;font-size:14px;flex-shrink:0;text-decoration:none;cursor:pointer;" onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/><path d="M2 12h20"/></svg>
     PR0✘Y
   </a>
