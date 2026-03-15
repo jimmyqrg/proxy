@@ -4551,12 +4551,13 @@ function handleWebSocket(request, targetWsUrl) {
       }
 
       if (!target) {
-        return new Response("Missing ?url= parameter", { status: 400 });
+        target = 'https://example.com';
       }
     }
-    
+
+    // Auto-add https:// if protocol is missing
     if (!target.startsWith("http://") && !target.startsWith("https://")) {
-      return new Response("URL must start with http:// or https://", { status: 400 });
+      target = 'https://' + target;
     }
 
     // Prevent infinite loops
